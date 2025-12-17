@@ -1,0 +1,14 @@
+# review-bot config for this repo (also serves as an example)
+[review]
+severity_threshold = "low"          # info | low | medium | high | critical
+ignore = ["tests/fixtures/*", "*.lock"]
+max_function_lines = 80
+
+[rules]
+# every rule is on by default; set false to disable
+# debug-print = false
+
+[llm]
+enabled = true
+model = "claude-opus-5-5"
+max_files = 25
