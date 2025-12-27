@@ -1,0 +1,37 @@
+diff --git a/src/service.py b/src/service.py
+new file mode 100644
+index 0000000..1234567
+--- /dev/null
++++ b/src/service.py
+@@ -0,0 +1,22 @@
++import subprocess
++
++AWS_KEY = "AKIAIOSFODNN7EXAMPLE"
++db_password = "hunter2hunter2"
++
++
++def find(conn, name, cache=[]):
++    print("finding", name)
++    q = "SELECT * FROM users WHERE name = '" + name + "'"
++    try:
++        return conn.execute(q)
++    except:
++        return None
++
++
++def run(expr):
++    # TODO: sandbox this
++    if expr is "":
++        return None
++    subprocess.run(expr, shell=True)
++    return eval(expr)
++
+diff --git a/web/app.js b/web/app.js
+index 1111111..2222222 100644
+--- a/web/app.js
++++ b/web/app.js
+@@ -1,2 +1,4 @@
+ const x = 1;
++console.log("debug", x);
++try { go(); } catch (e) {}
+ export default x;
