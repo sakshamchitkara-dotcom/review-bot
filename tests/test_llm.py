@@ -1,0 +1,70 @@
+import json
+from types import SimpleNamespace as NS
+
+from review_bot.diff import parse_diff
+from review_bot.llm import numbered_chunks, run_llm
+
+DIFF = """--- a/a.py
++++ b/a.py
+@@ -1,2 +1,3 @@
+ def f(xs):
++    return xs[len(xs)]
+     pass
+"""
+
+
+class FakeClient:
+    """Records calls; answers review requests then verify requests from canned JSON."""
+
+    def __init__(self, review, verify=None, stop_reason="end_turn"):
+        self.calls = []
+        self.review, self.verify, self.stop = review, verify, stop_reason
+        self.messages = self
+
+    def create(self, **kw):
+        self.calls.append(kw)
+        is_verify = "Candidate findings" in kw["messages"][0]["content"]
+        payload = self.verify if is_verify else self.review
+        return NS(stop_reason=self.stop, content=[NS(type="text", text=json.dumps(payload))])
+
+
+def finding(line, msg="off by one"):
+    return {"line": line, "severity": "high", "category": "bug", "message": msg, "suggestion": "use -1"}
+
+
+def test_review_then_verify_filters_low_confidence():
+    client = FakeClient(
+        review={"findings": [finding(2), finding(3, "speculative")]},
+        verify={"verdicts": [
+            {"id": 0, "keep": True, "confidence": 0.9, "reason": "real"},
+            {"id": 1, "keep": True, "confidence": 0.3, "reason": "meh"},
+        ]},
+    )
+    got = run_llm(client, "claude-opus-5-5", parse_diff(DIFF))
+    assert [(f.line, f.message, f.source) for f in got] == [(2, "off by one", "llm")]
+    assert len(client.calls) == 2
+    first = client.calls[0]
+    assert first["model"] == "claude-opus-5-5"
+    assert first["output_config"]["format"]["type"] == "json_schema"
+    assert "thinking" not in first  # adaptive by default; disabling 400s on this model
+
+
+def test_drops_lines_outside_diff():
+    client = FakeClient(review={"findings": [finding(99)]}, verify={"verdicts": []})
+    assert run_llm(client, "m", parse_diff(DIFF)) == []
+    assert len(client.calls) == 1  # nothing to verify
+
+
+def test_refusal_is_skipped_gracefully():
+    client = FakeClient(review={"findings": [finding(2)]}, stop_reason="refusal")
+    assert run_llm(client, "m", parse_diff(DIFF)) == []
+
+
+def test_numbered_chunks_uses_new_side_numbers_and_splits():
+    (fd,) = parse_diff(DIFF)
+    (chunk,) = numbered_chunks(fd)
+    assert "    2 +    return xs[len(xs)]" in chunk
+    big = "--- a/b.py\n+++ b/b.py\n" + "".join(
+        f"@@ -{i*10+1},1 +{i*10+1},2 @@\n x\n+{'y' * 50}\n" for i in range(20))
+    (fd2,) = parse_diff(big)
+    assert len(numbered_chunks(fd2, limit=300)) > 1
