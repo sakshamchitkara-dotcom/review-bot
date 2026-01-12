@@ -1,0 +1,83 @@
+"""Render findings as terminal text, Markdown, or SARIF 2.1.0."""
+from __future__ import annotations
+
+import json
+from collections import Counter
+
+from . import __version__
+from .findings import Finding, severity_rank
+
+_COLOR = {"critical": "\033[1;31m", "high": "\033[31m", "medium": "\033[33m", "low": "\033[36m", "info": "\033[2m"}
+_RESET = "\033[0m"
+
+
+def sort_findings(fs: list[Finding]) -> list[Finding]:
+    return sorted(fs, key=lambda f: (-severity_rank(f.severity), f.file, f.line))
+
+
+def summary(fs: list[Finding]) -> str:
+    if not fs:
+        return "No findings."
+    c = Counter(f.severity for f in fs)
+    parts = [f"{c[s]} {s}" for s in ("critical", "high", "medium", "low", "info") if c[s]]
+    return f"{len(fs)} finding(s): " + ", ".join(parts)
+
+
+def to_terminal(fs: list[Finding], color: bool = False) -> str:
+    lines = []
+    for f in sort_findings(fs):
+        sev = f.severity.upper()
+        if color:
+            sev = f"{_COLOR.get(f.severity, '')}{sev}{_RESET}"
+        lines.append(f"{f.file}:{f.line}: {sev} [{f.category}/{f.rule or f.source}] {f.message}")
+        if f.suggestion:
+            lines.append(f"    -> {f.suggestion}")
+    lines.append(summary(fs))
+    return "\n".join(lines)
+
+
+def _md_cell(s: str) -> str:
+    return s.replace("|", "\\|").replace("\n", " ")
+
+
+def to_markdown(fs: list[Finding], title: str = "review-bot report") -> str:
+    out = [f"## {title}", "", summary(fs), ""]
+    if fs:
+        out += ["| Severity | Location | Category | Finding | Suggestion |", "|---|---|---|---|---|"]
+        for f in sort_findings(fs):
+            out.append(f"| {f.severity} | `{f.file}:{f.line}` | {f.category} ({f.source}) | "
+                       f"{_md_cell(f.message)} | {_md_cell(f.suggestion)} |")
+    return "\n".join(out) + "\n"
+
+
+_SARIF_LEVEL = {"critical": "error", "high": "error", "medium": "warning", "low": "note", "info": "note"}
+
+
+def to_sarif(fs: list[Finding]) -> str:
+    rule_ids = sorted({f.rule or f.category for f in fs})
+    run = {
+        "tool": {"driver": {
+            "name": "review-bot",
+            "version": __version__,
+            "informationUri": "https://github.com/sakshamchitkara-dotcom/review-bot",
+            "rules": [{"id": r, "name": r} for r in rule_ids],
+        }},
+        "results": [
+            {
+                "ruleId": f.rule or f.category,
+                "level": _SARIF_LEVEL.get(f.severity, "note"),
+                "message": {"text": f.message + (f"\nSuggestion: {f.suggestion}" if f.suggestion else "")},
+                "locations": [{"physicalLocation": {
+                    "artifactLocation": {"uri": f.file},
+                    "region": {"startLine": max(1, f.line)},
+                }}],
+                "properties": {"severity": f.severity, "category": f.category, "source": f.source},
+            }
+            for f in sort_findings(fs)
+        ],
+    }
+    return json.dumps({
+        "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+        "version": "2.1.0",
+        "runs": [run],
+    }, indent=2)
