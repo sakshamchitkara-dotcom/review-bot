@@ -110,17 +110,6 @@ def numbered_chunks(fd: FileDiff, limit: int = MAX_CHUNK_CHARS) -> list[str]:
     return chunks
 
 
-def _visible_lines(fd: FileDiff) -> set[int]:
-    vis = set()
-    for h in fd.hunks:
-        ln = h.new_start
-        for raw in h.lines:
-            if raw[:1] not in ("-", "\\"):
-                vis.add(ln)
-                ln += 1
-    return vis
-
-
 def _call_json(client, model: str, system: str, user: str, schema: dict, effort: str) -> dict | None:
     import anthropic
 
@@ -149,7 +138,7 @@ def _call_json(client, model: str, system: str, user: str, schema: dict, effort:
 
 
 def review_file(client, model: str, fd: FileDiff) -> list[Finding]:
-    visible = _visible_lines(fd)
+    visible = fd.visible_lines()
     out: list[Finding] = []
     for chunk in numbered_chunks(fd):
         prompt = (

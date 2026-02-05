@@ -25,6 +25,17 @@ class FileDiff:
     hunks: list[Hunk] = field(default_factory=list)
     added: dict[int, str] = field(default_factory=dict)  # new line no -> content
 
+    def visible_lines(self) -> set[int]:
+        """New-side line numbers shown in the diff (added + context): valid PR comment anchors."""
+        vis = set()
+        for h in self.hunks:
+            ln = h.new_start
+            for raw in h.lines:
+                if raw[:1] not in ("-", "\\"):
+                    vis.add(ln)
+                    ln += 1
+        return vis
+
     def text(self) -> str:
         """Re-render this file's diff (used as LLM input)."""
         out = [f"--- a/{self.old_path or self.path}", f"+++ b/{self.path}"]
