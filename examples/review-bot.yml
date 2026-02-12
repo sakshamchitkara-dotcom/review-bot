@@ -1,0 +1,26 @@
+# Copy to .github/workflows/review-bot.yml in your repository.
+name: review-bot
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write     # only needed when post: "true"
+  security-events: write   # only needed for the SARIF upload
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4   # so .reviewbot.toml is available
+      - uses: sakshamchitkara-dotcom/review-bot@main
+        with:
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}  # empty on fork PRs -> static-only
+          post: "false"      # set "true" to post inline review comments
+          fail-on: ""        # e.g. "high" to block merges on high/critical findings
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always() && hashFiles('review-bot.sarif') != ''
+        with:
+          sarif_file: review-bot.sarif
+          category: review-bot
