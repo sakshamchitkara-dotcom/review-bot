@@ -46,7 +46,7 @@ def review(files: list[FileDiff], cfg: Config, get_source, *, use_llm: bool, ver
 
             try:
                 findings += run_llm(client, cfg.model, files, max_files=cfg.max_llm_files,
-                                    min_conf=min_conf, verify=verify)
+                                    min_conf=min_conf, verify=verify, known=findings)
                 mode = f"static + {cfg.model}"
             except anthropic.AuthenticationError:
                 warn("Anthropic authentication failed; falling back to static checks only")
