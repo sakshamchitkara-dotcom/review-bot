@@ -60,3 +60,9 @@ def test_review_comments_split_by_visibility():
 
 def test_bad_pr_ref_exits_2(capsys):
     assert main(["pr", "not-a-ref"]) == 2
+
+
+def test_diff_file_runs_ast_checks_on_new_files(capsys):
+    main(["diff", "--file", str(FIX / "buggy.diff"), "--format", "json"])
+    rules = {f["rule"] for f in json.loads(capsys.readouterr().out)}
+    assert {"mutable-default", "is-literal"} <= rules
