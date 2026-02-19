@@ -6,7 +6,7 @@ index 0000000..1234567
 @@ -0,0 +1,22 @@
 +import subprocess
 +
-+AWS_KEY = "AKIAIOSFODNN7EXAMPLE"
++AWS_KEY = "AKIAZ7Q4XKR2MB3TLW9P"
 +db_password = "hunter2hunter2"
 +
 +

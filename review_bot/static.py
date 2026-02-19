@@ -69,7 +69,7 @@ EVAL = {
     "ruby": re.compile(r"(?<![\w.])(?:eval|instance_eval|class_eval)\b"),
     "php": re.compile(r"(?<![\w>])eval\s*\("),
 }
-SHELL_TRUE = re.compile(r"shell\s*=\s*True")
+SHELL_TRUE = re.compile(r",\s*shell\s*=\s*True\b")  # kwarg in a call, not prose
 
 
 def _mask(s: str) -> str:
@@ -84,8 +84,8 @@ def scan_line(path: str, lang: str | None, ln: int, text: str, cfg: Config) -> I
             if not m:
                 continue
             val = m.group(m.lastindex or 0)
-            if name == "Hardcoded credential" and PLACEHOLDER.search(val):
-                continue
+            if "EXAMPLE" in val or (name == "Hardcoded credential" and PLACEHOLDER.search(val)):
+                continue  # vendor-documented example keys / obvious placeholders
             yield Finding(path, ln, sev, "security", f"Possible {name} committed ({_mask(val)}).",
                           "Remove it, rotate the credential, and load it from the environment or a secret store.",
                           rule="secret")
@@ -96,7 +96,8 @@ def scan_line(path: str, lang: str | None, ln: int, text: str, cfg: Config) -> I
                           "Track it in an issue or resolve it before merging.", rule="todo")
         return
     test = is_test_path(path)
-    if on("debug-print") and not test and lang in DEBUG and DEBUG[lang].search(text):
+    if on("debug-print") and not test and lang in DEBUG and DEBUG[lang].search(text) \
+            and "file=sys.stderr" not in text:
         yield Finding(path, ln, "low", "debug", "Debug output / breakpoint left in code.",
                       "Remove it or use the project's logger.", rule="debug-print")
     if on("todo") and (m := TODO.search(text)):

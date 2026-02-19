@@ -54,7 +54,7 @@ def test_detects_js_issues_and_missing_tests():
 
 def test_secret_value_is_masked():
     sec = [f for f in _run() if f.rule == "secret"]
-    assert sec and all("AKIAIOSFODNN7EXAMPLE" not in f.message for f in sec)
+    assert sec and all("AKIAZ7Q4XKR2MB3TLW9P" not in f.message for f in sec)
 
 
 def test_rules_can_be_disabled_and_paths_ignored():
@@ -92,3 +92,13 @@ def test_no_missing_tests_when_tests_touched():
 def test_is_test_path():
     assert is_test_path("tests/test_x.py") and is_test_path("src/a.test.ts") and is_test_path("pkg/a_test.go")
     assert not is_test_path("src/latest.py")
+
+
+def test_low_noise_cases():
+    diff = (
+        "--- /dev/null\n+++ b/n.py\n@@ -0,0 +1,3 @@\n"
+        '+KEY = "AKIAIOSFODNN7EXAMPLE"\n'
+        '+print("oops", file=sys.stderr)\n'
+        '+MSG = "never use shell=True"\n'
+    )
+    assert run_static(parse_diff(diff), Config(rules={"missing-tests": False})) == []
