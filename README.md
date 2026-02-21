@@ -122,8 +122,9 @@ Fork PRs don't receive secrets, so they get the static pass only.
 
 ## Example (real output)
 
-A throwaway repo with one intentionally buggy commit, reviewed with `review-bot diff HEAD~1`
-(no API key set, so static only):
+A throwaway repo with one intentionally buggy commit ([`examples/demo.sh`](examples/demo.sh)),
+reviewed with `review-bot diff HEAD~1` (no API key set, so static only). The AWS key is fake;
+AWS's documented `AKIA…EXAMPLE` key is deliberately ignored.
 
 ```
 review-bot: ANTHROPIC_API_KEY not set; running static checks only
