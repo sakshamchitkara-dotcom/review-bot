@@ -66,3 +66,9 @@ def test_diff_file_runs_ast_checks_on_new_files(capsys):
     main(["diff", "--file", str(FIX / "buggy.diff"), "--format", "json"])
     rules = {f["rule"] for f in json.loads(capsys.readouterr().out)}
     assert {"mutable-default", "is-literal"} <= rules
+
+
+def test_review_comment_carries_suggestion_block():
+    files = parse_diff("--- a/x.py\n+++ b/x.py\n@@ -1 +1,2 @@\n a\n+if x is 5:\n")
+    (c,), _ = build_review_comments(files, [Finding("x.py", 2, "medium", "c", "m", fix="if x == 5:")])
+    assert c["body"].endswith("```suggestion\nif x == 5:\n```")

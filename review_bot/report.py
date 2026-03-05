@@ -5,7 +5,7 @@ import json
 from collections import Counter
 
 from . import __version__
-from .findings import Finding, severity_rank
+from .findings import Finding, severity_rank, suggestion_block
 
 _COLOR = {"critical": "\033[1;31m", "high": "\033[31m", "medium": "\033[33m", "low": "\033[36m", "info": "\033[2m"}
 _RESET = "\033[0m"
@@ -47,6 +47,11 @@ def to_markdown(fs: list[Finding], title: str = "review-bot report") -> str:
         for f in sort_findings(fs):
             out.append(f"| {f.severity} | `{f.file}:{f.line}` | {f.category} ({f.source}) | "
                        f"{_md_cell(f.message)} | {_md_cell(f.suggestion)} |")
+        fixes = [f for f in sort_findings(fs) if f.fix is not None]
+        if fixes:
+            out += ["", "### Suggested fixes"]
+            for f in fixes:
+                out += ["", f"`{f.file}:{f.line}`: {f.message}", "", suggestion_block(f.fix)]
     return "\n".join(out) + "\n"
 
 
