@@ -84,6 +84,9 @@ def js_code_mask(text: str) -> str:
     return masked if i < 0 else masked[:i] + " " * (len(masked) - i)
 
 
+TS_ANY_EXPORT = re.compile(r"^\s*export\b.*(?:[:<|,]\s*|\bas\s+)any\b")
+
+
 def _loose_eq(text: str) -> tuple[list[re.Match], str]:
     """Loose (in)equality operators outside strings/comments, ignoring the `== null` idiom."""
     code = js_code_mask(text)
@@ -142,6 +145,10 @@ def scan_line(path: str, lang: str | None, ln: int, text: str, cfg: Config) -> I
                           "Loose equality (`==`/`!=`) coerces types, e.g. `0 == \"\"` is true.",
                           "Use `===` / `!==` (`== null` is left alone as the null-or-undefined idiom).",
                           rule="loose-equality", fix=fixed)
+    if on("ts-any-export") and path.endswith((".ts", ".tsx")) and TS_ANY_EXPORT.search(js_code_mask(text)):
+        yield Finding(path, ln, "low", "maintainability",
+                      "Exported API typed as `any` turns off type checking for every caller.",
+                      "Use a concrete type, a generic, or `unknown` and narrow it.", rule="ts-any-export")
     if on("sql-concat") and SQL_KW.search(text) and SQL_DYNAMIC.search(text):
         yield Finding(path, ln, "high", "security", "SQL built by string concatenation/formatting (SQL injection risk).",
                       "Use parameterized queries / bound parameters.", rule="sql-concat")
