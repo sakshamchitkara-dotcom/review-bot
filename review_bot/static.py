@@ -84,6 +84,8 @@ def js_code_mask(text: str) -> str:
     return masked if i < 0 else masked[:i] + " " * (len(masked) - i)
 
 
+UNSAFE_HTML = re.compile(r"\bdangerouslySetInnerHTML\b|\.(?:inner|outer)HTML\s*\+?=(?!=)")
+SANITIZED = re.compile(r"(?i)sanitize|DOMPurify|escapeHtml")
 TS_ANY_EXPORT = re.compile(r"^\s*export\b.*(?:[:<|,]\s*|\bas\s+)any\b")
 
 
@@ -145,6 +147,10 @@ def scan_line(path: str, lang: str | None, ln: int, text: str, cfg: Config) -> I
                           "Loose equality (`==`/`!=`) coerces types, e.g. `0 == \"\"` is true.",
                           "Use `===` / `!==` (`== null` is left alone as the null-or-undefined idiom).",
                           rule="loose-equality", fix=fixed)
+    if on("unsafe-html") and lang == "js" and UNSAFE_HTML.search(js_code_mask(text)) and not SANITIZED.search(text):
+        yield Finding(path, ln, "high", "security",
+                      "Raw HTML injection (dangerouslySetInnerHTML / innerHTML) is an XSS sink.",
+                      "Render text normally, or sanitize first (e.g. DOMPurify.sanitize).", rule="unsafe-html")
     if on("ts-any-export") and path.endswith((".ts", ".tsx")) and TS_ANY_EXPORT.search(js_code_mask(text)):
         yield Finding(path, ln, "low", "maintainability",
                       "Exported API typed as `any` turns off type checking for every caller.",
