@@ -138,3 +138,24 @@ def test_unsafe_html():
                "<p dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(bio) }} />",
                "if (el.innerHTML === '') {}", "// dangerouslySetInnerHTML is banned"], path="ui/Bio.tsx")
     assert [f.line for f in got if f.rule == "unsafe-html"] == [1, 2]
+
+
+def test_missing_await():
+    src = [
+        "async function save(x) { return db.put(x); }",
+        "export async function handler(req) {",
+        "  save(req.body);",
+        "  await save(req.body);",
+        "  const p = save(req.body);",
+        "  fetch('/ping');",
+        "  return save(req.body);",
+        "}",
+        "function sync() {",
+        "  this.save(1);",
+        "  void save(2);",
+        "}",
+    ]
+    files = parse_diff("--- /dev/null\n+++ b/api.js\n@@ -0,0 +1,12 @@\n" + "".join(f"+{s}\n" for s in src))
+    got = {f.line: f.fix for f in run_static(files, Config(), lambda p: "\n".join(src) + "\n")
+           if f.rule == "missing-await"}
+    assert got == {3: "  await save(req.body);", 6: "  await fetch('/ping');", 10: None}
