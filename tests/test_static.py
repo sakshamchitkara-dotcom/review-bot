@@ -159,3 +159,16 @@ def test_missing_await():
     got = {f.line: f.fix for f in run_static(files, Config(), lambda p: "\n".join(src) + "\n")
            if f.rule == "missing-await"}
     assert got == {3: "  await save(req.body);", 6: "  await fetch('/ping');", 10: None}
+
+
+def _src(path, lines):
+    body = "".join(f"+{ln}\n" for ln in lines)
+    diff = f"--- /dev/null\n+++ b/{path}\n@@ -0,0 +1,{len(lines)} @@\n{body}"
+    return {(f.line, f.rule) for f in run_static(parse_diff(diff), Config(rules={"missing-tests": False}))}
+
+
+def test_go_basics():
+    got = _src("svc/main.go", ["n, _ := strconv.Atoi(s)", "_ = os.Remove(p)", "for _, v := range xs {",
+                               "v, ok := m[k]", '\tpanic("boom")', "// x, _ := f()"])
+    assert got == {(1, "ignored-error"), (2, "ignored-error"), (5, "panic")}
+    assert _src("svc/main_test.go", ['panic("ok in tests")']) == set()
