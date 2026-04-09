@@ -57,6 +57,7 @@ DEBUG = {
     "go": re.compile(r"^\s*fmt\.Print(?:ln|f)?\("),
     "java": re.compile(r"System\.(?:out|err)\.print(?:ln)?\(|\.printStackTrace\(\)"),
     "php": re.compile(r"\b(?:var_dump|print_r|dd)\("),
+    "rust": re.compile(r"\bdbg!\(|^\s*e?println!\("),
 }
 TODO = re.compile(r"(?:#|//|/\*|--|<!--)\s*.*\b(TODO|FIXME|XXX|HACK)\b")
 BARE_EXCEPT = re.compile(r"^\s*except\s*:")
@@ -87,6 +88,8 @@ def js_code_mask(text: str) -> str:
 # --- Go / Rust -------------------------------------------------------------
 GO_IGNORED_ERR = re.compile(r",\s*_\s*:?=\s*[\w.]+\(|^\s*_\s*=\s*[\w.]+\(")
 GO_PANIC = re.compile(r"^\s*panic\(")
+RUST_UNWRAP = re.compile(r"\.unwrap\(\)")
+RUST_UNSAFE = re.compile(r"\bunsafe\s*(?:\{|fn\b|impl\b)")
 
 UNSAFE_HTML = re.compile(r"\bdangerouslySetInnerHTML\b|\.(?:inner|outer)HTML\s*\+?=(?!=)")
 SANITIZED = re.compile(r"(?i)sanitize|DOMPurify|escapeHtml")
@@ -158,6 +161,15 @@ def scan_line(path: str, lang: str | None, ln: int, text: str, cfg: Config) -> I
         if on("panic") and not test and GO_PANIC.search(text):
             yield Finding(path, ln, "low", "error-handling", "`panic` in library/application code.",
                           "Return an error to the caller instead.", rule="panic")
+    if lang == "rust" and not text.lstrip().startswith("//"):
+        # ponytail: per-line view can't see `#[cfg(test)] mod tests` inside src files; only tests/ paths are exempt.
+        if on("unwrap") and not test and RUST_UNWRAP.search(text):
+            yield Finding(path, ln, "low", "error-handling", "`.unwrap()` panics on None/Err.",
+                          "Propagate with `?`, or use `.expect(\"why this cannot fail\")`.", rule="unwrap")
+        if on("unsafe-block") and RUST_UNSAFE.search(text):
+            yield Finding(path, ln, "medium", "security", "New `unsafe` code bypasses the borrow checker.",
+                          "Add a `// SAFETY:` comment stating the invariant, or avoid unsafe.",
+                          rule="unsafe-block")
     if on("unsafe-html") and lang == "js" and UNSAFE_HTML.search(js_code_mask(text)) and not SANITIZED.search(text):
         yield Finding(path, ln, "high", "security",
                       "Raw HTML injection (dangerouslySetInnerHTML / innerHTML) is an XSS sink.",
