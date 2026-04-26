@@ -1,10 +1,12 @@
 """LLM pass: Claude reviews each file's diff, then a second call verifies the findings."""
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sys
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 from .diff import FileDiff
 from .findings import SEVERITIES, Finding
@@ -140,7 +142,10 @@ def _call_json(client, model: str, system: str, user: str, schema: dict, effort:
         return None
 
 
-def review_file(client, model: str, fd: FileDiff, known: list[Finding] | None = None) -> list[Finding]:
+def review_file(client, model: str, fd: FileDiff,
+                known: list[Finding] | None = None) -> tuple[list[Finding], bool]:
+    """Findings for one file, and whether every chunk got a usable answer (i.e. safe to cache)."""
+    ok = True
     visible = fd.visible_lines()
     already = ""
     if known:
@@ -154,6 +159,7 @@ def review_file(client, model: str, fd: FileDiff, known: list[Finding] | None = 
             f"<diff>\n{chunk}\n</diff>{already}"
         )
         data = _call_json(client, model, REVIEW_SYSTEM, prompt, REVIEW_SCHEMA, "high")
+        ok = ok and data is not None
         for item in (data or {}).get("findings", []):
             if item.get("line") not in visible:
                 continue  # hallucinated / out-of-diff line: can't anchor it, drop it
@@ -162,12 +168,13 @@ def review_file(client, model: str, fd: FileDiff, known: list[Finding] | None = 
                 fix = None  # multi-line or no-op: not a safe one-line suggestion
             out.append(Finding(fd.path, item["line"], item["severity"], item["category"],
                                item["message"], item.get("suggestion", ""), rule="llm", source="llm", fix=fix))
-    return out
+    return out, ok
 
 
-def verify_file(client, model: str, fd: FileDiff, cands: list[Finding], min_conf: float) -> list[Finding]:
+def verify_file(client, model: str, fd: FileDiff, cands: list[Finding],
+                min_conf: float) -> tuple[list[Finding], bool]:
     if not cands:
-        return []
+        return [], True
     listing = "\n".join(
         f"[{i}] line {f.line} ({f.severity}, {f.category}): {f.message}" for i, f in enumerate(cands)
     )
@@ -178,22 +185,58 @@ def verify_file(client, model: str, fd: FileDiff, cands: list[Finding], min_conf
     )
     data = _call_json(client, model, VERIFY_SYSTEM, prompt, VERIFY_SCHEMA, "medium")
     if data is None:
-        return cands  # verification unavailable: keep unverified findings rather than lose them
+        return cands, False  # verification unavailable: keep unverified findings rather than lose them
     keep = {v["id"] for v in data.get("verdicts", []) if v.get("keep") and v.get("confidence", 0) >= min_conf}
-    return [f for i, f in enumerate(cands) if i in keep]
+    return [f for i, f in enumerate(cands) if i in keep], True
+
+
+CACHE_VERSION = 1
+
+
+def default_cache_dir() -> Path:
+    if os.environ.get("REVIEW_BOT_CACHE"):
+        return Path(os.environ["REVIEW_BOT_CACHE"])
+    return Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "review-bot"
+
+
+def cache_key(model: str, fd: FileDiff, known: list[Finding], verify: bool, min_conf: float) -> str:
+    """sha256 over the file's diff plus everything else that shapes the LLM answer."""
+    blob = json.dumps([CACHE_VERSION, model, verify, min_conf if verify else None, REVIEW_SYSTEM,
+                       VERIFY_SYSTEM if verify else "", fd.path, fd.is_new, fd.text(),
+                       sorted(f"{k.line}:{k.message}" for k in known)])
+    return hashlib.sha256(blob.encode()).hexdigest()
 
 
 def run_llm(client, model: str, files: list[FileDiff], *, max_files: int = 25,
             min_conf: float = 0.6, verify: bool = True, workers: int = 4,
-            known: list[Finding] | None = None) -> list[Finding]:
+            known: list[Finding] | None = None, cache_dir: Path | None = None) -> list[Finding]:
     todo = [f for f in files if f.added and not f.is_binary and not f.is_deleted]
     if len(todo) > max_files:
         warn(f"{len(todo)} files changed; LLM reviews only the {max_files} with the most added lines")
         todo = sorted(todo, key=lambda f: len(f.added), reverse=True)[:max_files]
 
-    def one(fd: FileDiff) -> list[Finding]:
-        cands = review_file(client, model, fd, [k for k in known or [] if k.file == fd.path])
-        return verify_file(client, model, fd, cands, min_conf) if verify else cands
+    def one(fd: FileDiff) -> tuple[list[Finding], bool]:
+        mine = [k for k in known or [] if k.file == fd.path]
+        path = cache_dir / f"{cache_key(model, fd, mine, verify, min_conf)}.json" if cache_dir else None
+        if path and path.is_file():
+            try:
+                return [Finding(**d) for d in json.loads(path.read_text())], True
+            except (ValueError, TypeError):
+                pass  # corrupt/old entry: recompute and overwrite
+        res, ok = review_file(client, model, fd, mine)
+        if verify and res:
+            res, vok = verify_file(client, model, fd, res, min_conf)
+            ok = ok and vok
+        if path and ok:  # never cache a partial answer from a failed/refused call
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_suffix(f".{os.getpid()}.tmp")
+            tmp.write_text(json.dumps([f.to_dict() for f in res]))
+            tmp.replace(path)
+        return res, False
 
     with ThreadPoolExecutor(max_workers=workers) as ex:
-        return [f for res in ex.map(one, todo) for f in res]
+        results = list(ex.map(one, todo))
+    out = [f for res, _ in results for f in res]
+    if cache_dir:
+        warn(f"LLM cache: {sum(hit for _, hit in results)}/{len(todo)} file(s) reused from {cache_dir}")
+    return out

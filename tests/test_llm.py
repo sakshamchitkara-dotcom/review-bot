@@ -116,3 +116,27 @@ def test_llm_fix_kept_only_when_one_line_and_changed():
     assert [(f.message, f.fix) for f in got] == [("a", "    return xs[len(xs) - 1]"), ("b", None),
                                                   ("c", None), ("d", None)]
     assert "fix" in client.calls[0]["output_config"]["format"]["schema"]["properties"]["findings"]["items"]["required"]
+
+
+def test_cache_reuses_results_keyed_by_diff(tmp_path):
+    review = {"findings": [finding(2, fix="    return xs[-1]")]}
+    verify = {"verdicts": [{"id": 0, "keep": True, "confidence": 0.9, "reason": "real"}]}
+    first = FakeClient(review, verify)
+    got = run_llm(first, "m", parse_diff(DIFF), cache_dir=tmp_path)
+    assert len(first.calls) == 2 and len(list(tmp_path.glob("*.json"))) == 1
+
+    again = FakeClient(review, verify)
+    assert run_llm(again, "m", parse_diff(DIFF), cache_dir=tmp_path) == got
+    assert again.calls == []  # served from cache, fix included
+
+    changed = FakeClient(review, verify)
+    run_llm(changed, "m", parse_diff(DIFF.replace("len(xs)]", "len(xs) + 1]")), cache_dir=tmp_path)
+    assert len(changed.calls) == 2  # different diff -> different key
+    other_model = FakeClient(review, verify)
+    run_llm(other_model, "m2", parse_diff(DIFF), cache_dir=tmp_path)
+    assert len(other_model.calls) == 2
+
+
+def test_failed_calls_are_not_cached(tmp_path):
+    run_llm(FakeClient({"findings": [finding(2)]}, stop_reason="refusal"), "m", parse_diff(DIFF), cache_dir=tmp_path)
+    assert list(tmp_path.glob("*.json")) == []
