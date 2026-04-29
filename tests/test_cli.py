@@ -72,3 +72,28 @@ def test_review_comment_carries_suggestion_block():
     files = parse_diff("--- a/x.py\n+++ b/x.py\n@@ -1 +1,2 @@\n a\n+if x is 5:\n")
     (c,), _ = build_review_comments(files, [Finding("x.py", 2, "medium", "c", "m", fix="if x == 5:")])
     assert c["body"].endswith("```suggestion\nif x == 5:\n```")
+
+
+def test_baseline_suppresses_known_findings_only(tmp_path, monkeypatch, capsys):
+    run = lambda *a: subprocess.run(a, cwd=tmp_path, check=True, capture_output=True)  # noqa: E731
+    run("git", "init", "-q")
+    (tmp_path / "app.js").write_text("function f(a) {\n  console.log(a);\n  return a == 1;\n}\n")
+    run("git", "add", "app.js")
+    run("git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "init")
+    monkeypatch.chdir(tmp_path)
+
+    assert main(["baseline", "--no-llm"]) == 0
+    assert "recorded 3 finding(s) in .reviewbot-baseline.json" in capsys.readouterr().out
+    # the known lines move and get re-indented; one genuinely new issue is added
+    (tmp_path / "app.js").write_text(
+        "// header\nfunction f(a) {\n    console.log(a);\n    return a == 1;\n}\nconsole.log(2);\n")
+    main(["diff", "--no-llm", "--format", "json"])
+    out = capsys.readouterr()
+    got = [(f["line"], f["rule"]) for f in json.loads(out.out)]
+    assert got == [(6, "debug-print")] and "suppressed 3 known" in out.err  # 2 moved + missing-tests
+    main(["diff", "--no-llm", "--format", "json", "--no-baseline"])
+    assert len(json.loads(capsys.readouterr().out)) == 4
+
+
+def test_explicit_missing_baseline_is_an_error(tmp_path, capsys):
+    assert main(["diff", "--file", str(FIX / "buggy.diff"), "--baseline", str(tmp_path / "nope.json")]) == 2
