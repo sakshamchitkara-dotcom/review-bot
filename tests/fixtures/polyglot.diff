@@ -1,0 +1,35 @@
+diff --git a/ui/Profile.tsx b/ui/Profile.tsx
+new file mode 100644
+--- /dev/null
++++ b/ui/Profile.tsx
+@@ -0,0 +1,12 @@
++export async function saveProfile(p: Profile): Promise<void> {
++  await api.put("/profile", p);
++}
++
++export function Profile({ user }: { user: any }) {
++  if (user.id == 0) return null;
++  return <div dangerouslySetInnerHTML={{ __html: user.bio }} />;
++}
++
++export async function onSubmit(p: Profile) {
++  saveProfile(p);
++}
+diff --git a/svc/store.go b/svc/store.go
+new file mode 100644
+--- /dev/null
++++ b/svc/store.go
+@@ -0,0 +1,5 @@
++func Load(p string) Config {
++	b, _ := os.ReadFile(p)
++	if len(b) == 0 { panic("empty config") }
++	return parse(b)
++}
+diff --git a/core/src/lib.rs b/core/src/lib.rs
+new file mode 100644
+--- /dev/null
++++ b/core/src/lib.rs
+@@ -0,0 +1,3 @@
++pub fn port(s: &str) -> u16 {
++    s.parse().unwrap()
++}
