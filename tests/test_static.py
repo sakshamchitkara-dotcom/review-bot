@@ -169,8 +169,9 @@ def _src(path, lines):
 
 def test_go_basics():
     got = _src("svc/main.go", ["n, _ := strconv.Atoi(s)", "_ = os.Remove(p)", "for _, v := range xs {",
-                               "v, ok := m[k]", '\tpanic("boom")', "// x, _ := f()"])
-    assert got == {(1, "ignored-error"), (2, "ignored-error"), (5, "panic")}
+                               "v, ok := m[k]", '\tpanic("boom")', "// x, _ := f()",
+                               'if err != nil { panic(err) }', "log.panic(x)"])
+    assert got == {(1, "ignored-error"), (2, "ignored-error"), (5, "panic"), (7, "panic")}
     assert _src("svc/main_test.go", ['panic("ok in tests")']) == set()
 
 

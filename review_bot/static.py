@@ -87,7 +87,7 @@ def js_code_mask(text: str) -> str:
 
 # --- Go / Rust -------------------------------------------------------------
 GO_IGNORED_ERR = re.compile(r",\s*_\s*:?=\s*[\w.]+\(|^\s*_\s*=\s*[\w.]+\(")
-GO_PANIC = re.compile(r"^\s*panic\(")
+GO_PANIC = re.compile(r"(?<![\w.])panic\(")
 RUST_UNWRAP = re.compile(r"\.unwrap\(\)")
 RUST_UNSAFE = re.compile(r"\bunsafe\s*(?:\{|fn\b|impl\b)")
 

@@ -105,5 +105,6 @@ def test_polyglot_fixture_end_to_end(capsys):
     assert got[("ui/Profile.tsx", 6, "loose-equality")] == "  if (user.id === 0) return null;"
     assert got[("ui/Profile.tsx", 11, "missing-await")] == "  await saveProfile(p);"
     assert {("ui/Profile.tsx", 5, "ts-any-export"), ("ui/Profile.tsx", 7, "unsafe-html"),
-            ("svc/store.go", 2, "ignored-error"), ("core/src/lib.rs", 2, "unwrap")} <= set(got)
+            ("svc/store.go", 2, "ignored-error"), ("svc/store.go", 3, "panic"),
+            ("core/src/lib.rs", 2, "unwrap")} <= set(got)
     assert ("ui/Profile.tsx", 2, "missing-await") not in got  # awaited call is fine
