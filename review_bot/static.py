@@ -247,7 +247,8 @@ ASYNC_DEF = re.compile(
     r"\basync\s+function\s*\*?\s*([\w$]+)"                       # async function f(
     r"|\b([\w$]+)\s*[:=]\s*async\b"                              # const f = async / f: async
     r"|^\s*(?:(?:public|private|protected|static|override)\s+)*async\s+([\w$]+)\s*\(")  # async m() {
-FUNC_HEAD = re.compile(r"\bfunction\b|=>|^\s*(?:(?:public|private|protected|static|async)\s+)*[\w$]+\s*\([^)]*\)\s*(?::[^{]*)?\{\s*$")
+FUNC_HEAD = re.compile(r"\bfunction\b|=>|^\s*(?:(?:public|private|protected|static|async)\s+)*"
+                       r"(?!(?:if|for|while|switch|catch|with)\b)[\w$]+\s*\([^)]*\)\s*(?::[^{]*)?\{\s*$")
 BARE_CALL = r"^\s*(?:this\.|[\w$]+\.)?({names})\s*\(.*\)\s*;?\s*$"
 KNOWN_ASYNC = {"fetch"}
 
