@@ -163,9 +163,15 @@ def cmd_pr(args, cfg: Config) -> list[Finding]:
     emit(findings, args, title)
     if args.post:
         comments, body_extra = build_review_comments(files, findings)
-        body = to_markdown(body_extra, title) if body_extra else f"## {title}\n\n{len(comments)} inline comment(s)."
-        url = github.post_review(owner, repo, number, head_sha, body, comments, token)
-        print(f"review-bot: posted review {url}", file=sys.stderr)
+        seen_comments, seen_bodies = github.existing_feedback(owner, repo, number, token)
+        fresh = [c for c in comments if (c["path"], c["line"], c["body"]) not in seen_comments]
+        body = to_markdown(body_extra, title) if body_extra else \
+            f"## {title}\n\n{len(fresh)} new inline comment(s); {len(comments) - len(fresh)} already posted."
+        if not fresh and (not body_extra or body in seen_bodies):
+            print("review-bot: every finding is already on the PR; nothing new to post", file=sys.stderr)
+        else:
+            url = github.post_review(owner, repo, number, head_sha, body, fresh, token)
+            print(f"review-bot: posted review {url}", file=sys.stderr)
     return findings
 
 

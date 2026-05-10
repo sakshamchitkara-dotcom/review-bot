@@ -108,3 +108,24 @@ def test_polyglot_fixture_end_to_end(capsys):
             ("svc/store.go", 2, "ignored-error"), ("svc/store.go", 3, "panic"),
             ("core/src/lib.rs", 2, "unwrap")} <= set(got)
     assert ("ui/Profile.tsx", 2, "missing-await") not in got  # awaited call is fine
+
+
+def test_post_skips_comments_already_on_the_pr(monkeypatch, capsys):
+    from review_bot import github
+
+    diff = "diff --git a/x.py b/x.py\n--- a/x.py\n+++ b/x.py\n@@ -1 +1,3 @@\n a\n+import pdb\n+eval(y)\n"
+    meta = {"head": {"sha": "abc", "repo": {"full_name": "me/r"}}}
+    posted = []
+    monkeypatch.setattr(github, "get_token", lambda: "tok")
+    monkeypatch.setattr(github, "assert_can_post", lambda *a: None)
+    monkeypatch.setattr(github, "fetch_pr", lambda *a: (meta, diff))
+    monkeypatch.setattr(github, "fetch_file", lambda *a: None)
+    monkeypatch.setattr(github, "post_review", lambda o, r, n, sha, body, comments, tok: posted.append(comments) or "u")
+
+    already = set()
+    monkeypatch.setattr(github, "existing_feedback", lambda *a: (already, set()))
+    main(["pr", "me/r#1", "--post", "--no-llm", "--no-baseline", "--threshold", "medium"])
+    assert [c["line"] for c in posted[0]] == [3]
+    already.add(("x.py", 3, posted[0][0]["body"]))
+    main(["pr", "me/r#1", "--post", "--no-llm", "--no-baseline", "--threshold", "medium"])
+    assert len(posted) == 1 and "nothing new to post" in capsys.readouterr().err
