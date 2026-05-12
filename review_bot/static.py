@@ -71,6 +71,10 @@ EVAL = {
     "ruby": re.compile(r"(?<![\w.])(?:eval|instance_eval|class_eval)\b"),
     "php": re.compile(r"(?<![\w>])eval\s*\("),
 }
+EVAL_ADVICE = {
+    "python": "Avoid eval/exec; parse data explicitly (e.g. json.loads / ast.literal_eval).",
+    "js": "Avoid eval/new Function; use JSON.parse for data or a lookup table of allowed functions.",
+}
 SHELL_TRUE = re.compile(r",\s*shell\s*=\s*True\b")  # kwarg in a call, not prose
 
 # --- JS/TS -----------------------------------------------------------------
@@ -183,7 +187,7 @@ def scan_line(path: str, lang: str | None, ln: int, text: str, cfg: Config) -> I
                       "Use parameterized queries / bound parameters.", rule="sql-concat")
     if on("eval-exec") and lang in EVAL and EVAL[lang].search(text) and not text.lstrip().startswith(("#", "//")):
         yield Finding(path, ln, "high", "security", "Dynamic code execution (eval/exec) on a changed line.",
-                      "Avoid eval/exec; parse data explicitly (e.g. json.loads / ast.literal_eval).", rule="eval-exec")
+                      EVAL_ADVICE.get(lang, "Avoid eval; parse data explicitly."), rule="eval-exec")
     if on("shell-injection") and lang == "python" and SHELL_TRUE.search(text):
         yield Finding(path, ln, "medium", "security", "subprocess call with shell=True.",
                       "Pass an argument list and drop shell=True.", rule="shell-injection")

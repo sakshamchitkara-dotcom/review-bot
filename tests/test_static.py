@@ -189,3 +189,8 @@ def test_rust_basics():
                               "// .unwrap() is fine here"])
     assert got == {(1, "unwrap"), (2, "unsafe-block"), (3, "debug-print")}
     assert _src("tests/it.rs", ["x.unwrap();"]) == set()
+
+
+def test_eval_advice_matches_language():
+    (f,) = [f for f in _js(["export const run = (c: string) => eval(c);"]) if f.rule == "eval-exec"]
+    assert "JSON.parse" in f.suggestion and "literal_eval" not in f.suggestion
