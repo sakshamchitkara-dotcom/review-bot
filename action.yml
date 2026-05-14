@@ -38,6 +38,13 @@ runs:
     - uses: actions/setup-python@v5
       with:
         python-version: "3.12"
+    - name: Restore LLM result cache
+      if: inputs.anthropic-api-key != ''
+      uses: actions/cache@v4
+      with:
+        path: ${{ runner.temp }}/review-bot-cache
+        key: review-bot-${{ github.event.pull_request.number }}-${{ github.sha }}
+        restore-keys: review-bot-${{ github.event.pull_request.number }}-
     - name: Install review-bot
       shell: bash
       run: pip install --quiet "$GITHUB_ACTION_PATH"
@@ -46,6 +53,7 @@ runs:
       env:
         ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
         GITHUB_TOKEN: ${{ inputs.github-token }}
+        REVIEW_BOT_CACHE: ${{ runner.temp }}/review-bot-cache
         RB_PR: ${{ github.repository }}#${{ github.event.pull_request.number }}
         RB_POST: ${{ inputs.post }}
         RB_FAIL_ON: ${{ inputs.fail-on }}
