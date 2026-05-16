@@ -18,7 +18,8 @@
 
 ### Fixed
 - `--post` no longer reposts comments already on the PR; nothing is posted when there is
-  nothing new (Action re-runs on every push used to duplicate the whole review).
+  nothing new (Action re-runs on every push used to duplicate the whole review). Matching is
+  on path, line and the finding's headline, so reworded advice doesn't repost either.
 - `missing-await` offers its fix for calls inside `for`/`if` blocks.
 - Go `panic(` is caught mid-line (`if err != nil { panic(err) }`).
 - `eval` advice for JS/TS no longer suggests Python's `json.loads`.

@@ -126,6 +126,6 @@ def test_post_skips_comments_already_on_the_pr(monkeypatch, capsys):
     monkeypatch.setattr(github, "existing_feedback", lambda *a: (already, set()))
     main(["pr", "me/r#1", "--post", "--no-llm", "--no-baseline", "--threshold", "medium"])
     assert [c["line"] for c in posted[0]] == [3]
-    already.add(("x.py", 3, posted[0][0]["body"]))
+    already.add(("x.py", 3, posted[0][0]["body"].split("\n")[0]))  # same headline; advice text may differ
     main(["pr", "me/r#1", "--post", "--no-llm", "--no-baseline", "--threshold", "medium"])
     assert len(posted) == 1 and "nothing new to post" in capsys.readouterr().err

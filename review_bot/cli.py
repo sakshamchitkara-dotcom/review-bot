@@ -164,7 +164,7 @@ def cmd_pr(args, cfg: Config) -> list[Finding]:
     if args.post:
         comments, body_extra = build_review_comments(files, findings)
         seen_comments, seen_bodies = github.existing_feedback(owner, repo, number, token)
-        fresh = [c for c in comments if (c["path"], c["line"], c["body"]) not in seen_comments]
+        fresh = [c for c in comments if (c["path"], c["line"], github.headline(c["body"])) not in seen_comments]
         body = to_markdown(body_extra, title) if body_extra else \
             f"## {title}\n\n{len(fresh)} new inline comment(s); {len(comments) - len(fresh)} already posted."
         if not fresh and (not body_extra or body in seen_bodies):

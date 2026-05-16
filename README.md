@@ -68,7 +68,8 @@ Credentials:
 owns the repo or has admin on it, or that it is running inside that same repo's GitHub Actions
 workflow; otherwise it refuses. Findings on lines visible in the diff become inline comments;
 the rest go in the review body. Reviews are posted with `event: COMMENT` (never approve/block).
-Comments already on the PR (same path, line and body) are not posted again, so the Action can
+Comments already on the PR (same path, line and headline, i.e. severity, category and message)
+are not posted again, even if a newer version words the advice or fix differently, so the Action can
 run on every push without piling up duplicates; if nothing is new, nothing is posted.
 
 ## Checks
