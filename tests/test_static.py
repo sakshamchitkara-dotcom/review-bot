@@ -191,6 +191,19 @@ def test_rust_basics():
     assert _src("tests/it.rs", ["x.unwrap();"]) == set()
 
 
+def test_rust_cfg_test_module_in_src_is_test_code():
+    got = _src("src/lib.rs", ["pub fn f(s: &str) -> u8 { s.parse().unwrap() }", "", "#[cfg(test)]",
+                              "mod tests {", "    #[test]", "    fn t() { super::f(\"1\").to_string().parse::<u8>().unwrap(); }",
+                              "}"])
+    assert got == {(1, "unwrap")}
+    # a modified file: the #[cfg(test)] line is unchanged context, so the source decides
+    files = parse_diff("--- a/src/lib.rs\n+++ b/src/lib.rs\n@@ -3,1 +3,2 @@\n mod tests {\n+    x.unwrap();\n")
+    src = "pub fn f() {}\n#[cfg(test)]\nmod tests {\n    x.unwrap();\n}\n"
+    assert run_static(files, Config(rules={"missing-tests": False}), lambda p: src) == []
+    assert rules_at(run_static(files, Config(rules={"missing-tests": False}), lambda p: "\n" * 9)) == {
+        ("src/lib.rs", 4, "unwrap")}
+
+
 def test_eval_advice_matches_language():
     (f,) = [f for f in _js(["export const run = (c: string) => eval(c);"]) if f.rule == "eval-exec"]
     assert "JSON.parse" in f.suggestion and "literal_eval" not in f.suggestion
