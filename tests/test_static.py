@@ -207,3 +207,15 @@ def test_rust_cfg_test_module_in_src_is_test_code():
 def test_eval_advice_matches_language():
     (f,) = [f for f in _js(["export const run = (c: string) => eval(c);"]) if f.rule == "eval-exec"]
     assert "JSON.parse" in f.suggestion and "literal_eval" not in f.suggestion
+
+
+def test_shell_rules():
+    got = _src("deploy/install.sh", ["curl -fsSL https://x.sh/i | sh", "wget -qO- $URL | sudo bash",
+                                     "rm -rf $BUILD/", 'rm -rf "$BUILD"/', "rm -f $TMPFILE", "set -x",
+                                     'eval "$CMD"', "# curl x | sh", "sudo rm -r ${OUT}/cache  # clean"])
+    assert got == {(1, "curl-pipe-shell"), (2, "curl-pipe-shell"), (3, "unquoted-rm"), (6, "debug-print"),
+                   (7, "eval-exec"), (9, "unquoted-rm")}
+    fixes = {f.line: f.fix for f in run_static(parse_diff(
+        '--- /dev/null\n+++ b/a.bash\n@@ -0,0 +1,2 @@\n+rm -rf $BUILD/\n+sudo rm -r ${OUT}/cache  # clean\n'),
+        Config(rules={"missing-tests": False})) if f.rule == "unquoted-rm"}
+    assert fixes == {1: 'rm -rf "${BUILD:?}"/', 2: 'sudo rm -r "${OUT:?}"/cache  # clean'}
