@@ -89,6 +89,8 @@ run on every push without piling up duplicates; if nothing is new, nothing is po
 | `panic` – `panic(` outside tests | go | low |
 | `unsafe-block` – new `unsafe { }` / `unsafe fn` / `unsafe impl` | rust | medium |
 | `unwrap` – `.unwrap()` outside tests and `#[cfg(test)]` modules (`.expect("…")` is allowed) | rust | low |
+| `string-equality` – `==` / `!=` against a string literal (fix: `"lit".equals(x)`) | java | medium |
+| `not-null-assertion` – Kotlin `!!` outside tests | kotlin | low |
 | `curl-pipe-shell` – `curl … \| sh` / `wget … \| bash` | shell | high |
 | `unquoted-rm` – `rm -r` with an unquoted `$VAR` (fix: `"${VAR:?}"`) | shell | high |
 | `debug-print` – `print`, `breakpoint`, `console.log`, `debugger`, `binding.pry`, `dbg!`, `println!`, `set -x`, … (non-test files) | many | low |
