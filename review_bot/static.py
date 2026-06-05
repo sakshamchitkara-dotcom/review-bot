@@ -66,7 +66,7 @@ BARE_EXCEPT = re.compile(r"^\s*except\s*:")
 BARE_EXCEPT_SUB = re.compile(r"^(\s*)except\s*:")
 EMPTY_CATCH = re.compile(r"catch\s*(?:\([^)]*\))?\s*\{\s*\}")
 SQL_KW = re.compile(r"""(?i)["'`][^"'`]*\b(SELECT\b.+\bFROM|INSERT\s+INTO|UPDATE\b.+\bSET|DELETE\s+FROM)\b""")
-SQL_DYNAMIC = re.compile(r"""["'`]\s*\+|\+\s*["'`]|\bf["']|\.format\(|["']\s*%\s*[\w(]|\$\{""")
+SQL_DYNAMIC = re.compile(r"""["'`]\s*\+|\+\s*["'`]|\bf["']|\.format\(|["']\s*%\s*[\w(]|\$\{|#\{""")
 EVAL = {
     "python": re.compile(r"(?<![\w.])(?:eval|exec)\s*\("),
     "js": re.compile(r"(?<![\w.])eval\s*\(|new\s+Function\s*\(|setTimeout\(\s*[\"'`]"),
@@ -145,6 +145,12 @@ def _java_str_eq_fix(text: str) -> str | None:
     rep = ("!" if m.group(2) == "!" else "") + f"{m.group(3)}.equals({m.group(1)})"
     return text[:m.start()] + rep + text[m.end():]
 
+
+# --- Ruby ------------------------------------------------------------------
+RB_SHELL_INTERP = re.compile(r"""(?:\b(?:system|exec|spawn)|Open3\.\w+|IO\.popen|%x)\s*[(\[{]?\s*"[^"]*#\{|`[^`]*#\{""")
+RB_SQL_INTERP = re.compile(r"""\.(?:where|order|group|having|joins|find_by_sql|exists\?)\(\s*"[^"]*#\{""")
+RB_UNSAFE_HTML = re.compile(r"\.html_safe\b|(?<![\w.])raw\(")
+RB_RESCUE = re.compile(r"\brescue\s+(?:Exception\b|nil\s*$)")
 
 UNSAFE_HTML = re.compile(r"\bdangerouslySetInnerHTML\b|\.(?:inner|outer)HTML\s*\+?=(?!=)")
 SANITIZED = re.compile(r"(?i)sanitize|DOMPurify|escapeHtml")
@@ -225,6 +231,22 @@ def scan_line(path: str, lang: str | None, ln: int, text: str, cfg: Config,
             yield Finding(path, ln, "medium", "security", "New `unsafe` code bypasses the borrow checker.",
                           "Add a `// SAFETY:` comment stating the invariant, or avoid unsafe.",
                           rule="unsafe-block")
+    if lang == "ruby" and not text.lstrip().startswith("#"):
+        if on("shell-injection") and RB_SHELL_INTERP.search(text):
+            yield Finding(path, ln, "high", "security", "Shell command built with string interpolation.",
+                          "Pass arguments separately: `system(\"cmd\", arg)` / `Open3.capture2(\"cmd\", arg)`.",
+                          rule="shell-injection")
+        if on("sql-concat") and RB_SQL_INTERP.search(text):
+            yield Finding(path, ln, "high", "security", "SQL fragment built with string interpolation (SQL injection risk).",
+                          "Use placeholders: `where(\"name = ?\", name)` or a hash condition.", rule="sql-concat")
+        if on("unsafe-html") and RB_UNSAFE_HTML.search(text):
+            yield Finding(path, ln, "high", "security", "`html_safe` / `raw` disables Rails' HTML escaping (XSS sink).",
+                          "Let Rails escape it, or `sanitize` it first.", rule="unsafe-html")
+        if on("bare-except") and RB_RESCUE.search(text):
+            yield Finding(path, ln, "medium", "error-handling",
+                          "`rescue Exception` / `rescue nil` swallows everything, including interrupts and typos.",
+                          "Rescue specific errors (`rescue ActiveRecord::RecordNotFound`), or plain `rescue => e` and log.",
+                          rule="bare-except")
     if on("string-equality") and lang == "java" and not text.lstrip().startswith("//") \
             and JAVA_STR_EQ.search(text.split("//", 1)[0]):
         yield Finding(path, ln, "medium", "correctness",

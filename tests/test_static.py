@@ -234,3 +234,12 @@ def test_java_and_kotlin_rules():
                                                "val m = map[k]!!", "if (a != b) return"])
     assert got == {(1, "not-null-assertion"), (3, "debug-print"), (4, "not-null-assertion")}
     assert _src("app/src/test/kotlin/MainTest.kt", ["val n = user!!.name"]) == set()
+
+
+def test_ruby_rules():
+    got = _src("app/models/user.rb", ['system("convert #{params[:file]} out.png")', "out = `git log #{ref}`",
+                                      'system("ls", dir)', 'User.where("name = \'#{name}\'")', 'User.where(name: n)',
+                                      "<%= bio.html_safe %>", "raw(user.bio)", "x = risky rescue nil",
+                                      "rescue Exception => e", "rescue => e", '# system("#{x}")'])
+    assert got == {(1, "shell-injection"), (2, "shell-injection"), (4, "sql-concat"), (6, "unsafe-html"),
+                   (7, "unsafe-html"), (8, "bare-except"), (9, "bare-except")}
