@@ -243,3 +243,21 @@ def test_ruby_rules():
                                       "rescue Exception => e", "rescue => e", '# system("#{x}")'])
     assert got == {(1, "shell-injection"), (2, "shell-injection"), (4, "sql-concat"), (6, "unsafe-html"),
                    (7, "unsafe-html"), (8, "bare-except"), (9, "bare-except")}
+
+
+def test_inline_suppressions():
+    from review_bot.static import apply_suppressions
+
+    diff = ("--- a/app.py\n+++ b/app.py\n@@ -1,1 +1,7 @@\n"
+            " # reviewbot: ignore[debug-print]\n"      # unchanged line above still counts
+            "+print('a')\n"
+            "+print('b')  # reviewbot: ignore[todo, debug-print]\n"
+            "+print('c')  # reviewbot: ignore[todo]\n"
+            "+eval(x)  # reviewbot: ignore\n"
+            "+y = 1  # reviewbot: ignore[debug-print]\n"
+            "+print('d')\n")
+    files = parse_diff(diff)
+    fs = run_static(files, Config(rules={"missing-tests": False}))
+    kept, n = apply_suppressions(fs, files)
+    assert {(f.line, f.rule) for f in kept} == {(4, "debug-print"), (7, "debug-print")}
+    assert n == 3  # a code line's trailing ignore does not leak onto the next line (7)

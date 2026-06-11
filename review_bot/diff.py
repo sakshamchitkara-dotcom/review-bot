@@ -36,6 +36,17 @@ class FileDiff:
                     ln += 1
         return vis
 
+    def new_lines(self) -> dict[int, str]:
+        """New-side line number -> text for every line shown in the diff (added + context)."""
+        out = {}
+        for h in self.hunks:
+            ln = h.new_start
+            for raw in h.lines:
+                if raw[:1] not in ("-", "\\"):
+                    out[ln] = raw[1:]
+                    ln += 1
+        return out
+
     def text(self) -> str:
         """Re-render this file's diff (used as LLM input)."""
         out = [f"--- a/{self.old_path or self.path}", f"+++ b/{self.path}"]

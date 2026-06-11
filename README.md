@@ -106,6 +106,21 @@ The JS/TS, Go and Rust rules are line heuristics, not a type checker: `missing-a
 about async functions declared in the same file. Rust code from a `#[cfg(test)]` line to the end
 of the file counts as test code (the usual trailing `mod tests`).
 
+## Inline suppressions
+
+Silence one finding where it happens, in any comment syntax, on the flagged line or on a
+comment-only line directly above it:
+
+```python
+print(banner)  # reviewbot: ignore[debug-print]
+# reviewbot: ignore[sql-concat, todo]
+q = f"SELECT * FROM {table}"  # table comes from a fixed allow-list; TODO move to an enum
+eval(expr)  # reviewbot: ignore     <- no brackets: every rule on this line
+```
+
+Rule ids are the ones shown in brackets in the report (`llm` for Claude's findings). A trailing
+ignore on a code line applies to that line only.
+
 ## Configuration: `.reviewbot.toml`
 
 ```toml

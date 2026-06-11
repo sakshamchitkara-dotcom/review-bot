@@ -413,6 +413,33 @@ def _missing_tests(files: list[FileDiff], cfg: Config) -> list[Finding]:
     return out
 
 
+IGNORE = re.compile(r"reviewbot:\s*ignore(?:\[([\w\s,-]*)\])?", re.I)
+
+
+def _ignores(text: str | None, rule: str) -> bool:
+    m = IGNORE.search(text or "")
+    return m is not None and (m.group(1) is None or rule in {r.strip() for r in m.group(1).split(",")})
+
+
+def apply_suppressions(findings: list[Finding], files: list[FileDiff]) -> tuple[list[Finding], int]:
+    """Drop findings whose line, or a comment-only line right above it, says `reviewbot: ignore[rule]`.
+
+    `reviewbot: ignore` without brackets silences every rule on that line. Works in any comment
+    syntax (#, //, --, /* */). ponytail: only lines visible in the diff are consulted, which covers
+    the line above unless the diff was made with -U0.
+    """
+    text = {f.path: f.new_lines() for f in files}
+    out = []
+    for f in findings:
+        lines, rule = text.get(f.file, {}), f.rule or f.category
+        above = lines.get(f.line - 1, "")
+        comment_only = re.match(r"\s*(?:#|//|--|/\*|\*|<!--)", above) is not None
+        if _ignores(lines.get(f.line), rule) or (comment_only and _ignores(above, rule)):
+            continue
+        out.append(f)
+    return out, len(findings) - len(out)
+
+
 def dedupe(findings: list[Finding]) -> list[Finding]:
     seen, out = set(), []
     for f in findings:
