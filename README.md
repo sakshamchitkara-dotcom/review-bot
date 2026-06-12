@@ -40,6 +40,9 @@ review-bot pr https://github.com/owner/repo/pull/123 --post   # post a review (o
 
 review-bot baseline                # record findings in every tracked file -> .reviewbot-baseline.json
 review-bot baseline main           # ...or only those in the diff against a ref / --staged / --file
+
+review-bot explain                 # list every rule
+review-bot explain unquoted-rm     # what a rule flags, why, and the fix
 ```
 
 Common flags:
@@ -74,14 +77,16 @@ run on every push without piling up duplicates; if nothing is new, nothing is po
 
 ## Checks
 
+`review-bot explain <rule>` prints the reasoning and a flagged/fixed example for each.
+
 | Rule | Languages | Severity |
 |---|---|---|
 | `secret` – AWS/GitHub/Anthropic/OpenAI/Slack/Google keys, private keys, hardcoded passwords | all files | critical/high |
-| `sql-concat` – SQL built with `+`, f-strings, `.format`, `%`, `${}` | code | high |
+| `sql-concat` – SQL built with `+`, f-strings, `.format`, `%`, `${}`, `#{}`; Rails `where("…#{}")` | code | high |
 | `eval-exec` – `eval`/`exec`/`new Function` | py, js/ts, rb, php, shell | high |
-| `shell-injection` – `shell=True` | py | medium |
-| `unsafe-html` – `dangerouslySetInnerHTML`, `innerHTML =` / `outerHTML =` (unless visibly sanitized) | js/ts | high |
-| `bare-except` – `except:` / empty `catch {}` (fix: `except Exception:`) | py, js/ts, java, c#, php | medium |
+| `shell-injection` – `shell=True`; Ruby `system`/backticks/`Open3` with `#{}` | py, rb | medium/high |
+| `unsafe-html` – `dangerouslySetInnerHTML`, `innerHTML =` / `outerHTML =` (unless visibly sanitized); `.html_safe`, `raw(` | js/ts, rb | high |
+| `bare-except` – `except:` / empty `catch {}` / `rescue Exception`, `rescue nil` (fix: `except Exception:`) | py, js/ts, java, kotlin, c#, php, rb | medium |
 | `loose-equality` – `==` / `!=` outside strings/comments; `== null` allowed (fix: `===` / `!==`) | js/ts | medium |
 | `missing-await` – bare call to a function declared `async` in the file, or `fetch` (fix: `await …` when the enclosing function is async) | js/ts | medium |
 | `ts-any-export` – `export` line typed `: any`, `<any>`, `as any` | ts/tsx | low |
