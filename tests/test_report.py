@@ -43,3 +43,13 @@ def test_fixes_render_as_suggestion_blocks():
     assert "`a.js:4`: loose eq\n\n```suggestion\nif (a === b) {\n```" in md
     assert md.count("```suggestion") == 1
     assert suggestion_block("x = `a` ```b```") == "````suggestion\nx = `a` ```b```\n````"
+
+
+def test_sarif_rules_carry_registry_metadata_for_code_scanning():
+    rules = {r["id"]: r for r in json.loads(to_sarif(FS))["runs"][0]["tool"]["driver"]["rules"]}
+    sec = rules["secret"]
+    assert sec["shortDescription"]["text"].startswith("Credential")
+    assert sec["defaultConfiguration"]["level"] == "error"
+    assert sec["properties"]["security-severity"] == "9.5" and sec["properties"]["tags"] == ["security"]
+    assert "security-severity" not in rules["debug-print"]["properties"]
+    assert rules["debug-print"]["defaultConfiguration"]["level"] == "note"
