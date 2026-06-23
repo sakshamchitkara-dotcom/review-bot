@@ -70,7 +70,8 @@ Credentials:
 `--post` is never on by default. Before any LLM call, review-bot checks that the token's user
 owns the repo or has admin on it, or that it is running inside that same repo's GitHub Actions
 workflow; otherwise it refuses. Findings on lines visible in the diff become inline comments;
-the rest go in the review body. Reviews are posted with `event: COMMENT` (never approve/block).
+the rest go in the review body, under a summary line and a severity-count table for the whole
+run. Reviews are posted with `event: COMMENT` (never approve/block).
 Comments already on the PR (same path, line and headline, i.e. severity, category and message)
 are not posted again, even if a newer version words the advice or fix differently, so the Action can
 run on every push without piling up duplicates; if nothing is new, nothing is posted.

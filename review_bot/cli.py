@@ -13,7 +13,7 @@ from .config import Config, load_config
 from .diff import FileDiff, parse_diff
 from .findings import SEVERITIES, Finding, severity_rank, suggestion_block
 from .llm import default_cache_dir, make_client, run_llm, warn
-from .report import to_markdown, to_sarif, to_terminal
+from .report import severity_table, summary, to_markdown, to_sarif, to_terminal
 from .static import apply_suppressions, run_static
 
 
@@ -168,14 +168,23 @@ def cmd_pr(args, cfg: Config) -> list[Finding]:
         comments, body_extra = build_review_comments(files, findings)
         seen_comments, seen_bodies = github.existing_feedback(owner, repo, number, token)
         fresh = [c for c in comments if (c["path"], c["line"], github.headline(c["body"])) not in seen_comments]
-        body = to_markdown(body_extra, title) if body_extra else \
-            f"## {title}\n\n{len(fresh)} new inline comment(s); {len(comments) - len(fresh)} already posted."
-        if not fresh and (not body_extra or body in seen_bodies):
+        extra = to_markdown(body_extra, "Not on a line in the diff") if body_extra else ""
+        body = review_body(title, findings, len(fresh), len(comments) - len(fresh), extra)
+        if not fresh and (not extra or any(extra in b for b in seen_bodies)):
             print("review-bot: every finding is already on the PR; nothing new to post", file=sys.stderr)
         else:
             url = github.post_review(owner, repo, number, head_sha, body, fresh, token)
             print(f"review-bot: posted review {url}", file=sys.stderr)
     return findings
+
+
+def review_body(title: str, findings: list[Finding], new: int, old: int, extra: str) -> str:
+    """Review summary: severity counts for the whole run, what was posted, and findings with no diff line."""
+    parts = [f"## {title}", "", summary(findings), "", severity_table(findings), "",
+             f"{new} new inline comment(s); {old} already posted."]
+    if extra:
+        parts += ["", "#" + extra]  # "## Not on…" -> "### Not on…" under the review heading
+    return "\n".join(parts) + "\n"
 
 
 def build_review_comments(files: list[FileDiff], findings: list[Finding]) -> tuple[list[dict], list[Finding]]:

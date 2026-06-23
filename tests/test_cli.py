@@ -149,3 +149,40 @@ def test_every_emitted_rule_is_documented():
 
     emitted = set(re.findall(r'rule="([\w-]+)"', Path(static.__file__).read_text()))
     assert emitted and emitted | {"llm"} == set(RULES)
+
+
+def test_review_body_has_severity_counts_and_leftovers_are_not_reposted(monkeypatch, capsys):
+    from review_bot import github
+
+    # line 3 is visible (inline); missing-tests is anchored to line 2, also visible; the LLM-style
+    # finding on line 50 can't be anchored so it goes in the body
+    diff = "diff --git a/x.py b/x.py\n--- a/x.py\n+++ b/x.py\n@@ -1 +1,3 @@\n a\n+import pdb\n+eval(y)\n"
+    meta = {"head": {"sha": "abc", "repo": {"full_name": "me/r"}}}
+    posted, bodies = [], set()
+    monkeypatch.setattr(github, "get_token", lambda: "tok")
+    monkeypatch.setattr(github, "assert_can_post", lambda *a: None)
+    monkeypatch.setattr(github, "fetch_pr", lambda *a: (meta, diff))
+    monkeypatch.setattr(github, "fetch_file", lambda *a: None)
+    monkeypatch.setattr(github, "existing_feedback",
+                        lambda *a: ({(c["path"], c["line"], c["body"].split("\n")[0]) for p in posted for c in p[1]},
+                                    bodies))
+
+    def post(o, r, n, sha, body, comments, tok):
+        posted.append((body, comments))
+        bodies.add(body)
+        return "u"
+
+    monkeypatch.setattr(github, "post_review", post)
+    import review_bot.cli as cli
+    real_review = cli.review
+    monkeypatch.setattr(cli, "review", lambda *a, **k: (
+        real_review(*a, **k)[0] + [Finding("x.py", 50, "high", "bug", "far away")], "static only"))
+
+    main(["pr", "me/r#1", "--post", "--no-llm", "--no-baseline"])
+    body, comments = posted[0]
+    assert "4 finding(s): 2 high, 2 low" in body
+    assert "| critical | high | medium | low | info |\n|---|---|---|---|---|\n| 0 | 2 | 0 | 2 | 0 |" in body
+    assert "3 new inline comment(s); 0 already posted." in body
+    assert "### Not on a line in the diff" in body and "far away" in body
+    main(["pr", "me/r#1", "--post", "--no-llm", "--no-baseline"])
+    assert len(posted) == 1 and "nothing new to post" in capsys.readouterr().err
