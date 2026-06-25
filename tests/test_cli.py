@@ -186,3 +186,34 @@ def test_review_body_has_severity_counts_and_leftovers_are_not_reposted(monkeypa
     assert "### Not on a line in the diff" in body and "far away" in body
     main(["pr", "me/r#1", "--post", "--no-llm", "--no-baseline"])
     assert len(posted) == 1 and "nothing new to post" in capsys.readouterr().err
+
+
+def _fake_pr(monkeypatch, post):
+    from review_bot import github
+
+    diff = "diff --git a/x.py b/x.py\n--- a/x.py\n+++ b/x.py\n@@ -1 +1,2 @@\n a\n+eval(y)\n"
+    monkeypatch.setattr(github, "get_token", lambda: "tok")
+    monkeypatch.setattr(github, "assert_can_post", lambda *a: None)
+    monkeypatch.setattr(github, "fetch_pr", lambda *a: ({"head": {"sha": "abc", "repo": None}}, diff))
+    monkeypatch.setattr(github, "fetch_file", lambda *a: None)
+    monkeypatch.setattr(github, "existing_feedback", lambda *a: (set(), set()))
+    monkeypatch.setattr(github, "post_review", post)
+
+
+def test_read_only_token_warns_instead_of_failing(monkeypatch, tmp_path, capsys):
+    from review_bot.github import GitHubError
+
+    def forbidden(*a):
+        raise GitHubError("POST /repos/me/r/pulls/1/reviews -> HTTP 403: Resource not accessible by integration", 403)
+
+    _fake_pr(monkeypatch, forbidden)
+    sarif = tmp_path / "r.sarif"
+    assert main(["pr", "me/r#1", "--post", "--no-llm", "--sarif", str(sarif), "--fail-on", "critical"]) == 0
+    assert "could not post the review (HTTP 403" in capsys.readouterr().err and sarif.is_file()
+    assert main(["pr", "me/r#1", "--post", "--no-llm", "--fail-on", "high"]) == 1  # gating still applies
+
+    def broken(*a):
+        raise GitHubError("POST … -> HTTP 422: bad line", 422)
+
+    _fake_pr(monkeypatch, broken)
+    assert main(["pr", "me/r#1", "--post", "--no-llm"]) == 2  # other API errors still fail loudly

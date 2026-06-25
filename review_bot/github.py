@@ -13,7 +13,9 @@ API = os.environ.get("GITHUB_API_URL", "https://api.github.com")
 
 
 class GitHubError(RuntimeError):
-    pass
+    def __init__(self, msg: str, status: int | None = None):
+        super().__init__(msg)
+        self.status = status
 
 
 def get_token() -> str | None:
@@ -51,7 +53,7 @@ def _api(path: str, token: str | None, *, accept: str = "application/vnd.github+
             return r.read().decode("utf-8", "replace")
     except urllib.error.HTTPError as e:
         detail = e.read().decode("utf-8", "replace")[:500]
-        raise GitHubError(f"{method} {path} -> HTTP {e.code}: {detail}") from None
+        raise GitHubError(f"{method} {path} -> HTTP {e.code}: {detail}", e.code) from None
 
 
 def fetch_pr(owner: str, repo: str, number: int, token: str | None) -> tuple[dict, str]:
