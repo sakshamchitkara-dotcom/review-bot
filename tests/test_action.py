@@ -46,11 +46,11 @@ def run_step(tmp_path, **env):
     r = subprocess.run(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", review_step_script()],
                        cwd=tmp_path, env=full, capture_output=True, text=True)
     argv = (tmp_path / "argv.txt").read_text().split("\n")[:-1]
-    return r.returncode, argv, summary.read_text() if summary.exists() else None
+    return r.returncode, argv, summary.read_text() if summary.exists() else None, r.stdout
 
 
 def test_action_step_minimal_args(tmp_path):
-    rc, argv, summary = run_step(tmp_path)
+    rc, argv, summary, _ = run_step(tmp_path)
     assert rc == 0
     assert argv == ["pr", "me/r#7", "--sarif", "review-bot.sarif", "--markdown", "review-bot.md"]
     assert summary == "## review-bot (static only)\n"
@@ -59,12 +59,18 @@ def test_action_step_minimal_args(tmp_path):
 
 def test_action_step_all_inputs_and_exit_code(tmp_path):
     (tmp_path / ".reviewbot.toml").write_text("")
-    rc, argv, summary = run_step(tmp_path, RB_POST="true", RB_FAIL_ON="high", RB_EXTRA="--no-llm --threshold medium",
+    rc, argv, summary, _ = run_step(tmp_path, RB_POST="true", RB_FAIL_ON="high", RB_EXTRA="--no-llm --threshold medium",
                                  STUB_RC="1")
     assert rc == 1  # fail-on result propagates...
     assert summary is not None  # ...after the report reached the job summary
     assert argv[6:] == ["--config", ".reviewbot.toml", "--post", "--fail-on", "high", "--no-llm",
                         "--threshold", "medium"]
+
+
+def test_action_step_notices_duplicate_feedback(tmp_path):
+    rc, _, _, stdout = run_step(tmp_path, RB_POST="true", RB_UPLOAD="true")
+    assert rc == 0 and "::notice title=review-bot::post and upload-sarif are both on" in stdout
+    assert "::notice" not in run_step(tmp_path, RB_POST="true", RB_UPLOAD="false")[3]
 
 
 @pytest.fixture
