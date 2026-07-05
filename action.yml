@@ -39,12 +39,12 @@ outputs:
 runs:
   using: "composite"
   steps:
-    - uses: actions/setup-python@v5
+    - uses: actions/setup-python@v7
       with:
         python-version: "3.12"
     - name: Restore LLM result cache
       if: inputs.anthropic-api-key != ''
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         path: ${{ runner.temp }}/review-bot-cache
         key: review-bot-${{ github.event.pull_request.number }}-${{ github.sha }}
