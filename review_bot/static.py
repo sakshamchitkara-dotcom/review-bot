@@ -399,18 +399,18 @@ def run_static(files: list[FileDiff], cfg: Config, get_source: SourceGetter | No
 
 
 def _missing_tests(files: list[FileDiff], cfg: Config) -> list[Finding]:
-    touched_tests = any(is_test_path(f.path) for f in files if not f.is_deleted)
-    if touched_tests:
+    """One finding per diff, on the first changed source file (one per file was a wall of comments)."""
+    if any(is_test_path(f.path) for f in files if not f.is_deleted):
         return []
-    out = []
-    for f in files:
-        if f.is_deleted or f.is_binary or cfg.ignored(f.path) or not f.added:
-            continue
-        if PurePosixPath(f.path).suffix.lower() in CODE_EXTS and not is_test_path(f.path):
-            out.append(Finding(f.path, min(f.added), "low", "testing",
-                               "Source changed but no test files were added or modified in this diff.",
-                               "Add or update tests covering this change.", rule="missing-tests"))
-    return out
+    src = [f for f in files if not (f.is_deleted or f.is_binary or cfg.ignored(f.path) or not f.added)
+           and PurePosixPath(f.path).suffix.lower() in CODE_EXTS and not is_test_path(f.path)]
+    if not src:
+        return []
+    names = ", ".join(f"`{f.path}`" for f in src[:5]) + (f" and {len(src) - 5} more" if len(src) > 5 else "")
+    return [Finding(src[0].path, min(src[0].added), "low", "testing",
+                    "Source changed but no test files were added or modified in this diff.",
+                    f"Add or update tests covering this change ({len(src)} source file(s): {names}).",
+                    rule="missing-tests")]
 
 
 IGNORE = re.compile(r"reviewbot:\s*ignore(?:\[([\w\s,-]*)\])?", re.I)

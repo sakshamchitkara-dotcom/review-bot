@@ -102,7 +102,8 @@ RULES: dict[str, Rule] = {
                  "Fine to leave, but it should be tracked somewhere people look."),
     "missing-tests": Rule(
         "low", "code", "Source changed but no test file touched in the same diff.",
-        "One finding per changed source file; silence it with `missing-tests = false` in [rules]."),
+        "One finding per diff, on the first changed source file, listing the others; silence it with "
+        "`missing-tests = false` in [rules]."),
     "huge-function": Rule(
         "medium", "py (AST)", "Function longer than `max_function_lines` (default 80) touching the change.",
         "Long functions are hard to review and test; the limit is configurable in [review]."),

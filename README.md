@@ -101,7 +101,7 @@ run on every push without piling up duplicates; if nothing is new, nothing is po
 | `unquoted-rm` – `rm -r` with an unquoted `$VAR` (fix: `"${VAR:?}"`) | shell | high |
 | `debug-print` – `print`, `breakpoint`, `console.log`, `debugger`, `binding.pry`, `dbg!`, `println!`, `set -x`, … (non-test files) | many | low |
 | `todo` – TODO/FIXME/XXX/HACK | all | info |
-| `missing-tests` – source changed but no test file touched | code | low |
+| `missing-tests` – source changed but no test file touched (one per diff) | code | low |
 | `huge-function` – function over `max_function_lines` touching the change | py (AST) | medium |
 | `mutable-default` – `def f(x=[])` | py (AST) | medium |
 | `is-literal` – `x is "a"` (fix: `==` / `!=`) | py (AST) | medium |
