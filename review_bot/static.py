@@ -382,19 +382,19 @@ def run_static(files: list[FileDiff], cfg: Config, get_source: SourceGetter | No
     for fd in files:
         if fd.is_deleted or fd.is_binary or cfg.ignored(fd.path):
             continue
+        cfg_f = cfg.for_path(fd.path)
         lang = lang_of(fd.path)
         test_from = rust_test_start(fd, get_source(fd.path) if get_source else None) if lang == "rust" else None
         for ln, text in fd.added.items():
             test = is_test_path(fd.path) or (test_from is not None and ln >= test_from)
-            findings.extend(scan_line(fd.path, lang, ln, text, cfg, test))
+            findings.extend(scan_line(fd.path, lang, ln, text, cfg_f, test))
         if lang == "python" and get_source:
             src = get_source(fd.path)
             if src is not None:
-                findings.extend(python_ast_checks(fd, src, cfg))
-        if lang == "js" and cfg.rule_on("missing-await"):
-            findings.extend(js_missing_await(fd, get_source(fd.path) if get_source else None, cfg))
-    if cfg.rule_on("missing-tests"):
-        findings.extend(_missing_tests(files, cfg))
+                findings.extend(python_ast_checks(fd, src, cfg_f))
+        if lang == "js" and cfg_f.rule_on("missing-await"):
+            findings.extend(js_missing_await(fd, get_source(fd.path) if get_source else None, cfg_f))
+    findings.extend(_missing_tests(files, cfg))
     return dedupe(findings)
 
 
@@ -403,7 +403,8 @@ def _missing_tests(files: list[FileDiff], cfg: Config) -> list[Finding]:
     if any(is_test_path(f.path) for f in files if not f.is_deleted):
         return []
     src = [f for f in files if not (f.is_deleted or f.is_binary or cfg.ignored(f.path) or not f.added)
-           and PurePosixPath(f.path).suffix.lower() in CODE_EXTS and not is_test_path(f.path)]
+           and PurePosixPath(f.path).suffix.lower() in CODE_EXTS and not is_test_path(f.path)
+           and cfg.for_path(f.path).rule_on("missing-tests")]
     if not src:
         return []
     names = ", ".join(f"`{f.path}`" for f in src[:5]) + (f" and {len(src) - 5} more" if len(src) > 5 else "")

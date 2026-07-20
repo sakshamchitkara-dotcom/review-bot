@@ -217,3 +217,19 @@ def test_read_only_token_warns_instead_of_failing(monkeypatch, tmp_path, capsys)
 
     _fake_pr(monkeypatch, broken)
     assert main(["pr", "me/r#1", "--post", "--no-llm"]) == 2  # other API errors still fail loudly
+
+
+def test_per_path_overrides_end_to_end(tmp_path, capsys):
+    cfg = tmp_path / "c.toml"
+    cfg.write_text('[[overrides]]\npaths = ["legacy/*"]\nseverity_threshold = "high"\n'
+                   '[overrides.rules]\nsql-concat = false\n[[overrides]]\npaths = ["app/*"]\n'
+                   '[overrides.rules]\nmissing-tests = false\n')
+    diff = ("diff --git a/legacy/a.py b/legacy/a.py\n--- a/legacy/a.py\n+++ b/legacy/a.py\n@@ -1 +1,4 @@\n a\n"
+            "+print(x)\n+q = \"SELECT * FROM t WHERE id=\" + i\n+eval(y)\n"
+            "diff --git a/app/b.py b/app/b.py\n--- a/app/b.py\n+++ b/app/b.py\n@@ -1 +1,2 @@\n a\n+print(x)\n")
+    d = tmp_path / "x.diff"
+    d.write_text(diff)
+    main(["diff", "--file", str(d), "--config", str(cfg), "--format", "json", "--no-baseline"])
+    got = {(f["file"], f["rule"]) for f in json.loads(capsys.readouterr().out)}
+    # legacy/: only high and up, no sql-concat, and the diff's missing-tests (anchored in legacy/) is low
+    assert got == {("legacy/a.py", "eval-exec"), ("app/b.py", "debug-print")}

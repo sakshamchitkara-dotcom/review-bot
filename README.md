@@ -175,6 +175,43 @@ model = "claude-opus-5-5"
 max_files = 25                       # biggest files first when a PR is larger
 ```
 
+### Per-directory overrides
+
+`[[overrides]]` blocks change `[rules]`, `severity_threshold` and `max_function_lines` for paths
+matching their globs. Every matching block applies, in file order, so later blocks win.
+`--threshold` on the command line beats per-path thresholds.
+
+```toml
+[[overrides]]
+paths = ["legacy/*", "scripts/*.sh"]
+severity_threshold = "high"          # only high/critical in old code
+[overrides.rules]
+debug-print = false
+
+[[overrides]]
+paths = ["tests/*"]
+[overrides.rules]
+secret = false                       # fixtures hold fake keys
+```
+
+Any rule id works under `[rules]` / `[overrides.rules]`, including `llm` for Claude's findings.
+
+Real run (temp repo; `.reviewbot.toml` has one block, `legacy/*` at `high`; both files gained a
+`print`, `legacy/old.py` also an `eval`):
+
+```
+$ review-bot diff --no-llm
+legacy/old.py:3: HIGH [security/eval-exec] Dynamic code execution (eval/exec) on a changed line.
+    -> Avoid eval/exec; parse data explicitly (e.g. json.loads / ast.literal_eval).
+app/new.py:2: LOW [debug/debug-print] Debug output / breakpoint left in code.
+    -> Remove it or use the project's logger.
+app/new.py:2: LOW [testing/missing-tests] Source changed but no test files were added or modified in this diff.
+    -> Add or update tests covering this change (2 source file(s): `app/new.py`, `legacy/old.py`).
+3 finding(s): 1 high, 2 low
+```
+
+`legacy/old.py:2`'s `print` is hidden; `--threshold low` brings it back (4 findings).
+
 ## Suggested fixes
 
 When a finding has a safe one-line rewrite (static rules marked "fix" above, or a `fix` returned
