@@ -73,3 +73,13 @@ def test_override_validation(tmp_path):
     p.write_text('[[overrides]]\npaths = ["a/*"]\nseverity_threshold = "loud"\n')
     with pytest.raises(ValueError, match="loud"):
         load_config(p)
+
+
+def test_unknown_rule_ids_warn(tmp_path, capsys):
+    p = tmp_path / "c.toml"
+    p.write_text('[rules]\ndebug_print = false\nsecret = true\n[[overrides]]\npaths = ["a/*"]\n'
+                 '[overrides.rules]\nnot-a-rule = false\n')
+    load_config(p)
+    err = capsys.readouterr().err
+    assert "unknown rule 'debug_print'; did you mean 'debug-print'?" in err
+    assert "unknown rule 'not-a-rule'" in err and "'secret'" not in err
