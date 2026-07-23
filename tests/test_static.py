@@ -263,3 +263,15 @@ def test_inline_suppressions():
     kept, n = apply_suppressions(fs, files)
     assert {(f.line, f.rule) for f in kept} == {(4, "debug-print"), (7, "debug-print")}
     assert n == 3  # a code line's trailing ignore does not leak onto the next line (7)
+
+
+def test_ignore_comment_above_is_read_from_the_file_when_the_diff_has_no_context():
+    from review_bot.static import apply_suppressions
+
+    # `git diff -U0`: only the added line 3 is in the diff; the comment on line 2 is unchanged
+    files = parse_diff("--- a/x.py\n+++ b/x.py\n@@ -2,0 +3 @@\n+print(rows)\n")
+    src = "import sys\n# reviewbot: ignore[debug-print]\nprint(rows)\n"
+    fs = run_static(files, Config(rules={"missing-tests": False}))
+    assert apply_suppressions(fs, files)[1] == 0
+    assert apply_suppressions(fs, files, lambda p: src) == ([], 1)
+    assert apply_suppressions(fs, files, lambda p: None)[1] == 0  # file unavailable: nothing suppressed

@@ -422,18 +422,26 @@ def _ignores(text: str | None, rule: str) -> bool:
     return m is not None and (m.group(1) is None or rule in {r.strip() for r in m.group(1).split(",")})
 
 
-def apply_suppressions(findings: list[Finding], files: list[FileDiff]) -> tuple[list[Finding], int]:
+def apply_suppressions(findings: list[Finding], files: list[FileDiff],
+                      get_source: SourceGetter | None = None) -> tuple[list[Finding], int]:
     """Drop findings whose line, or a comment-only line right above it, says `reviewbot: ignore[rule]`.
 
     `reviewbot: ignore` without brackets silences every rule on that line. Works in any comment
-    syntax (#, //, --, /* */). ponytail: only lines visible in the diff are consulted, which covers
-    the line above unless the diff was made with -U0.
+    syntax (#, //, --, /* */). The line above comes from the diff, or from the file itself when the
+    diff has no context there (`git diff -U0`).
     """
     text = {f.path: f.new_lines() for f in files}
+    sources: dict[str, list[str]] = {}
     out = []
     for f in findings:
         lines, rule = text.get(f.file, {}), f.rule or f.category
-        above = lines.get(f.line - 1, "")
+        above = lines.get(f.line - 1)
+        if above is None and get_source and f.line > 1:
+            if f.file not in sources:
+                sources[f.file] = (get_source(f.file) or "").splitlines()
+            src = sources[f.file]
+            above = src[f.line - 2] if f.line - 2 < len(src) else ""
+        above = above or ""
         comment_only = re.match(r"\s*(?:#|//|--|/\*|\*|<!--)", above) is not None
         if _ignores(lines.get(f.line), rule) or (comment_only and _ignores(above, rule)):
             continue
