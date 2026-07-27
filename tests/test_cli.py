@@ -233,3 +233,32 @@ def test_per_path_overrides_end_to_end(tmp_path, capsys):
     got = {(f["file"], f["rule"]) for f in json.loads(capsys.readouterr().out)}
     # legacy/: only high and up, no sql-concat, and the diff's missing-tests (anchored in legacy/) is low
     assert got == {("legacy/a.py", "eval-exec"), ("app/b.py", "debug-print")}
+
+
+def test_fork_pr_reads_head_repo_and_survives_read_only_token(monkeypatch, capsys):
+    """Fork PR inside the base repo's Actions run: posting is allowed by the guard, sources come from
+    the fork at the head sha, and the read-only GITHUB_TOKEN's 403 on POST is a warning, not a failure."""
+    from review_bot import github
+
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "me/r")
+    diff = "diff --git a/x.py b/x.py\n--- a/x.py\n+++ b/x.py\n@@ -1 +1,2 @@\n a\n+def f(a=[]): pass\n"
+    meta = {"head": {"sha": "f00d", "repo": {"full_name": "forker/r-fork"}}}
+    fetched, calls = [], []
+
+    def api(path, token, method="GET", **kw):
+        calls.append((method, path))
+        if method == "POST":
+            raise github.GitHubError(f"POST {path} -> HTTP 403: Resource not accessible by integration", 403)
+        return "[]"
+
+    monkeypatch.setattr(github, "get_token", lambda: "read-only")
+    monkeypatch.setattr(github, "_api", api)
+    monkeypatch.setattr(github, "fetch_pr", lambda *a: (meta, diff))
+    monkeypatch.setattr(github, "fetch_file", lambda *a: fetched.append(a[:4]) or "a\ndef f(a=[]): pass\n")
+    assert main(["pr", "me/r#9", "--post", "--no-llm", "--no-baseline", "--format", "json"]) == 0
+    out = capsys.readouterr()
+    assert "mutable-default" in out.out  # AST check ran on the fork's file
+    assert set(fetched) == {("forker", "r-fork", "x.py", "f00d")}  # fetched once, from the fork
+    assert ("POST", "/repos/me/r/pulls/9/reviews") in calls
+    assert "could not post the review (HTTP 403" in out.err
