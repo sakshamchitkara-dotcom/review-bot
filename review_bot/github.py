@@ -5,6 +5,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -64,8 +65,40 @@ def _api(path: str, token: str | None, *, accept: str = "application/vnd.github+
 def fetch_pr(owner: str, repo: str, number: int, token: str | None) -> tuple[dict, str]:
     base = f"/repos/{owner}/{repo}/pulls/{number}"
     meta = json.loads(_api(base, token))
-    diff = _api(base, token, accept="application/vnd.github.diff")
+    try:
+        diff = _api(base, token, accept="application/vnd.github.diff")
+    except GitHubError as e:
+        if e.status != 406:  # 406 too_large: over 300 files / 20k lines for the diff media type
+            raise
+        diff = diff_from_files(_paged(f"{base}/files", token))
     return meta, diff
+
+
+def diff_from_files(entries: list[dict]) -> str:
+    """Rebuild a unified diff from `GET /pulls/N/files` (used when the PR is too large for the diff endpoint).
+
+    GitHub omits `patch` for binary files and for single files whose patch is itself too large;
+    those are skipped with a warning. The endpoint returns at most 3000 files.
+    """
+    out, skipped = [], []
+    for f in entries:
+        if "patch" not in f:
+            skipped.append(f["filename"])
+            continue
+        new, old = f["filename"], f.get("previous_filename", f["filename"])
+        out.append(f"diff --git a/{old} b/{new}")
+        if f["status"] == "added":
+            out += ["new file mode 100644", "--- /dev/null", f"+++ b/{new}"]
+        elif f["status"] == "removed":
+            out += ["deleted file mode 100644", f"--- a/{old}", "+++ /dev/null"]
+        else:
+            out += [f"--- a/{old}", f"+++ b/{new}"]
+        out.append(f["patch"])
+    print(f"review-bot: PR diff too large for the diff endpoint; rebuilt it from {len(entries) - len(skipped)} "
+          f"per-file patch(es)" + (f", skipped {len(skipped)} with no patch (binary or too large)" if skipped else "")
+          + ("; GitHub lists at most 3000 files, so later files are missing" if len(entries) >= 3000 else ""),
+          file=sys.stderr)
+    return "\n".join(out) + "\n"
 
 
 def fetch_file(owner: str, repo: str, path: str, ref: str, token: str | None) -> str | None:
