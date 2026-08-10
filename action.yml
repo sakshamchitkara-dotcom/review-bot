@@ -28,6 +28,10 @@ inputs:
     description: "Upload review-bot.sarif to GitHub code scanning (needs `security-events: write`)."
     required: false
     default: "false"
+  annotations:
+    description: "Print findings as workflow annotations (shown on the PR's Files tab; works with a read-only token)."
+    required: false
+    default: "false"
   extra-args:
     description: "Extra arguments passed to review-bot"
     required: false
@@ -64,6 +68,7 @@ runs:
         RB_CONFIG: ${{ inputs.config }}
         RB_EXTRA: ${{ inputs.extra-args }}
         RB_UPLOAD: ${{ inputs.upload-sarif }}
+        RB_ANNOTATIONS: ${{ inputs.annotations }}
       run: |
         if [ "$RB_POST" = "true" ] && [ "$RB_UPLOAD" = "true" ]; then
           echo "::notice title=review-bot::post and upload-sarif are both on; code scanning also comments on the PR, so most findings will appear twice. Consider turning one off."
@@ -71,6 +76,7 @@ runs:
         args=(pr "$RB_PR" --sarif review-bot.sarif --markdown review-bot.md)
         [ -f "$RB_CONFIG" ] && args+=(--config "$RB_CONFIG")
         [ "$RB_POST" = "true" ] && args+=(--post)
+        [ "$RB_ANNOTATIONS" = "true" ] && args+=(--format github)
         [ -n "$RB_FAIL_ON" ] && args+=(--fail-on "$RB_FAIL_ON")
         # shellcheck disable=SC2206
         [ -n "$RB_EXTRA" ] && args+=($RB_EXTRA)
