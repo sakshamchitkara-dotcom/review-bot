@@ -64,6 +64,31 @@ def to_markdown(fs: list[Finding], title: str = "review-bot report") -> str:
     return "\n".join(out) + "\n"
 
 
+_GH_LEVEL = {"critical": "error", "high": "error", "medium": "warning", "low": "notice", "info": "notice"}
+
+
+def _gh_escape(s: str, prop: bool = False) -> str:
+    s = s.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+    return s.replace(":", "%3A").replace(",", "%2C") if prop else s
+
+
+def to_github(fs: list[Finding]) -> str:
+    """GitHub Actions workflow commands: each finding becomes an annotation on the PR's Files tab.
+
+    GitHub shows at most 10 error and 10 warning annotations per step (50 per job); the rest
+    are still in the log.
+    """
+    lines = []
+    for f in sort_findings(fs):
+        title = f"review-bot {f.severity}: {f.rule or f.category}"
+        msg = f.message + (f"\n{f.suggestion}" if f.suggestion else "") + (
+            f"\nfix: {f.fix.strip()}" if f.fix is not None else "")
+        lines.append(f"::{_GH_LEVEL.get(f.severity, 'notice')} file={_gh_escape(f.file, True)},"
+                     f"line={max(1, f.line)},title={_gh_escape(title, True)}::{_gh_escape(msg)}")
+    lines.append(summary(fs))
+    return "\n".join(lines)
+
+
 _SARIF_LEVEL = {"critical": "error", "high": "error", "medium": "warning", "low": "note", "info": "note"}
 
 
