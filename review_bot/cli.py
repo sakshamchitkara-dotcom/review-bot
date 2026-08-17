@@ -22,6 +22,8 @@ def git_diff(base: str | None, staged: bool) -> str:
     cmd = ["git", "diff", "--no-color", "--no-ext-diff", "-U3"]
     if staged:
         cmd.append("--cached")
+    if not base and subprocess.run(["git", "rev-parse", "-q", "--verify", "HEAD"], capture_output=True).returncode:
+        base = EMPTY_TREE  # no commits yet (e.g. the pre-commit hook on a repo's first commit)
     cmd.append(base or "HEAD")
     r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode != 0:

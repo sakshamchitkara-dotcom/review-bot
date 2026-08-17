@@ -262,3 +262,13 @@ def test_fork_pr_reads_head_repo_and_survives_read_only_token(monkeypatch, capsy
     assert set(fetched) == {("forker", "r-fork", "x.py", "f00d")}  # fetched once, from the fork
     assert ("POST", "/repos/me/r/pulls/9/reviews") in calls
     assert "could not post the review (HTTP 403" in out.err
+
+
+def test_staged_review_before_the_first_commit(tmp_path, monkeypatch, capsys):
+    """`diff --staged` in a repo with no HEAD yet, as the pre-commit hook runs on a first commit."""
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    (tmp_path / "app.py").write_text("import os\nos.system(input())\neval(x)\n")
+    subprocess.run(["git", "add", "app.py"], cwd=tmp_path, check=True)
+    monkeypatch.chdir(tmp_path)
+    assert main(["diff", "--staged", "--no-llm", "--fail-on", "high", "--format", "json"]) == 1
+    assert "eval-exec" in {f["rule"] for f in json.loads(capsys.readouterr().out)}
