@@ -228,6 +228,25 @@ def cmd_pr(args, cfg: Config) -> list[Finding]:
     return findings
 
 
+def cmd_mr(args, cfg: Config) -> list[Finding]:
+    from . import gitlab
+
+    host, project, iid = gitlab.parse_mr_ref(args.ref)
+    token = gitlab.get_token()
+    meta, text = gitlab.fetch_mr(host, project, iid, token)
+    sha, src = gitlab.head_sha(meta), meta.get("source_project_id") or project
+
+    @functools.lru_cache(maxsize=None)
+    def get_source(path: str) -> str | None:
+        return gitlab.fetch_file(host, src, path, sha, token)
+
+    files = parse_diff(text)
+    findings, mode = review(files, cfg, get_source, use_llm=not args.no_llm, verify=not args.no_verify,
+                            min_conf=args.min_confidence, cache_dir=_cache_dir(args), known=_baseline(args))
+    emit(findings, args, f"review-bot ({mode}) on {project}!{iid}")
+    return findings
+
+
 def review_body(title: str, findings: list[Finding], new: int, old: int, extra: str) -> str:
     """Review summary: severity counts for the whole run, what was posted, and findings with no diff line."""
     parts = [f"## {title}", "", summary(findings), "", severity_table(findings), "",
@@ -315,6 +334,8 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("ref", help="owner/repo#N or PR URL")
     r.add_argument("--post", action="store_true",
                    help="post findings as a PR review (off by default; only on repos you own/admin)")
+    m = sub.add_parser("mr", parents=[common], help="review a GitLab merge request (read-only)")
+    m.add_argument("ref", help="group/project!N (host: $GITLAB_URL, default gitlab.com) or MR URL")
     return p
 
 
@@ -327,11 +348,12 @@ def main(argv: list[str] | None = None) -> int:
         cfg.set_threshold(args.threshold)
     try:
         findings = {"diff": cmd_diff, "pr": cmd_pr, "baseline": cmd_baseline,
-                    "stats": cmd_stats}[args.cmd](args, cfg)
+                    "stats": cmd_stats, "mr": cmd_mr}[args.cmd](args, cfg)
     except Exception as e:  # noqa: BLE001 - top-level: report cleanly, non-zero exit
         from .github import GitHubError
+        from .gitlab import GitLabError
 
-        if isinstance(e, (GitHubError, ValueError, FileNotFoundError)):
+        if isinstance(e, (GitHubError, GitLabError, ValueError, FileNotFoundError)):
             print(f"review-bot: {e}", file=sys.stderr)
             return 2
         raise
