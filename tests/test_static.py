@@ -154,11 +154,19 @@ def test_missing_await():
         "  this.save(1);",
         "  void save(2);",
         "}",
+        "async function all(xs) {",
+        "  for (const x of xs) {",
+        "    if (x) {",
+        "      save(x);",
+        "    }",
+        "  }",
+        "}",
     ]
-    files = parse_diff("--- /dev/null\n+++ b/api.js\n@@ -0,0 +1,12 @@\n" + "".join(f"+{s}\n" for s in src))
+    files = parse_diff("--- /dev/null\n+++ b/api.js\n@@ -0,0 +1,19 @@\n" + "".join(f"+{s}\n" for s in src))
     got = {f.line: f.fix for f in run_static(files, Config(), lambda p: "\n".join(src) + "\n")
            if f.rule == "missing-await"}
-    assert got == {3: "  await save(req.body);", 6: "  await fetch('/ping');", 10: None}
+    assert got == {3: "  await save(req.body);", 6: "  await fetch('/ping');", 10: None,
+                   16: "      await save(x);"}  # control-flow blocks are not function heads
 
 
 def _src(path, lines):
