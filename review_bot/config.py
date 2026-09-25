@@ -78,7 +78,20 @@ def load_config(path: str | Path | None = None) -> Config:
         if "max_function_lines" in o:
             ov["max_function_lines"] = int(o["max_function_lines"])
         cfg.overrides.append((list(paths), ov))
+    _check_rule_ids(p, [cfg.rules] + [o["rules"] for _, o in cfg.overrides])
     for sev in [cfg.severity_threshold] + [o.get("severity_threshold", "low") for _, o in cfg.overrides]:
         if sev not in SEVERITIES:
             raise ValueError(f"severity_threshold must be one of {SEVERITIES}, got {sev!r}")
     return cfg
+
+
+def _check_rule_ids(path: Path, tables: list[dict]) -> None:
+    """Warn about rule ids that match nothing (a typo like `debug_print` silently did nothing)."""
+    import difflib
+
+    from .rules import RULES
+
+    for rid in sorted({r for t in tables for r in t} - set(RULES)):
+        close = difflib.get_close_matches(rid, RULES, n=1)
+        hint = f"; did you mean {close[0]!r}?" if close else "; run `review-bot explain` for the list"
+        print(f"review-bot: {path}: unknown rule {rid!r}{hint}", file=sys.stderr)
