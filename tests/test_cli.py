@@ -129,3 +129,23 @@ def test_post_skips_comments_already_on_the_pr(monkeypatch, capsys):
     already.add(("x.py", 3, posted[0][0]["body"].split("\n")[0]))  # same headline; advice text may differ
     main(["pr", "me/r#1", "--post", "--no-llm", "--no-baseline", "--threshold", "medium"])
     assert len(posted) == 1 and "nothing new to post" in capsys.readouterr().err
+
+
+def test_explain_lists_and_describes_rules(capsys):
+    assert main(["explain"]) == 0
+    assert "unquoted-rm" in capsys.readouterr().out
+    assert main(["explain", "unquoted-rm"]) == 0
+    out = capsys.readouterr().out
+    assert out.startswith("unquoted-rm (high; shell)") and '"${BUILD:?}"' in out
+    assert main(["explain", "unwrapp"]) == 2
+    assert "Did you mean: unwrap" in capsys.readouterr().err
+
+
+def test_every_emitted_rule_is_documented():
+    import re
+
+    from review_bot import static
+    from review_bot.rules import RULES
+
+    emitted = set(re.findall(r'rule="([\w-]+)"', Path(static.__file__).read_text()))
+    assert emitted and emitted | {"llm"} == set(RULES)

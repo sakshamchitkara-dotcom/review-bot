@@ -195,6 +195,24 @@ def build_review_comments(files: list[FileDiff], findings: list[Finding]) -> tup
     return comments, rest
 
 
+def cmd_explain(rule: str | None) -> int:
+    from .rules import RULES, explain
+
+    if not rule:
+        width = max(map(len, RULES))
+        print("\n".join(f"{r:<{width}}  {v.severity:<13} {v.summary}" for r, v in RULES.items()))
+        return 0
+    if rule not in RULES:
+        import difflib
+
+        close = difflib.get_close_matches(rule, RULES, n=3)
+        hint = f" Did you mean: {', '.join(close)}?" if close else " Run `review-bot explain` for the list."
+        print(f"review-bot: unknown rule {rule!r}.{hint}", file=sys.stderr)
+        return 2
+    print(explain(rule))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--config", help="path to .reviewbot.toml (default: ./.reviewbot.toml if present)")
@@ -226,6 +244,8 @@ def build_parser() -> argparse.ArgumentParser:
     b.add_argument("base", nargs="?", help="record findings in the diff against this ref (default: whole tree)")
     b.add_argument("--staged", action="store_true", help="record findings in staged changes only")
     b.add_argument("--file", help="record findings from a unified diff FILE ('-' for stdin)")
+    e = sub.add_parser("explain", help="describe a rule (no argument: list all rules)")
+    e.add_argument("rule", nargs="?", help="rule id, as shown in [category/rule] in the report")
     r = sub.add_parser("pr", parents=[common], help="review a GitHub pull request")
     r.add_argument("ref", help="owner/repo#N or PR URL")
     r.add_argument("--post", action="store_true",
@@ -235,6 +255,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.cmd == "explain":
+        return cmd_explain(args.rule)
     cfg = load_config(args.config)
     if args.threshold:
         cfg.severity_threshold = args.threshold
