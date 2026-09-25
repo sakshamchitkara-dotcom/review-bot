@@ -68,3 +68,11 @@ def test_numbered_chunks_uses_new_side_numbers_and_splits():
         f"@@ -{i*10+1},1 +{i*10+1},2 @@\n x\n+{'y' * 50}\n" for i in range(20))
     (fd2,) = parse_diff(big)
     assert len(numbered_chunks(fd2, limit=300)) > 1
+
+
+def test_static_findings_are_passed_as_context():
+    from review_bot.findings import Finding
+
+    client = FakeClient(review={"findings": []})
+    run_llm(client, "m", parse_diff(DIFF), known=[Finding("a.py", 2, "low", "debug", "static saw this")])
+    assert "static saw this" in client.calls[0]["messages"][0]["content"]

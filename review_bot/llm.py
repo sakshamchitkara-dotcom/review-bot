@@ -137,14 +137,18 @@ def _call_json(client, model: str, system: str, user: str, schema: dict, effort:
         return None
 
 
-def review_file(client, model: str, fd: FileDiff) -> list[Finding]:
+def review_file(client, model: str, fd: FileDiff, known: list[Finding] | None = None) -> list[Finding]:
     visible = fd.visible_lines()
+    already = ""
+    if known:
+        already = "\n\nAlready reported by static checks (do not repeat these):\n" + "\n".join(
+            f"- line {f.line}: {f.message}" for f in known)
     out: list[Finding] = []
     for chunk in numbered_chunks(fd):
         prompt = (
             f"File: {fd.path}{' (new file)' if fd.is_new else ''}\n"
             "Numbered diff (left column = line number in the new file):\n"
-            f"<diff>\n{chunk}\n</diff>"
+            f"<diff>\n{chunk}\n</diff>{already}"
         )
         data = _call_json(client, model, REVIEW_SYSTEM, prompt, REVIEW_SCHEMA, "high")
         for item in (data or {}).get("findings", []):
@@ -174,14 +178,15 @@ def verify_file(client, model: str, fd: FileDiff, cands: list[Finding], min_conf
 
 
 def run_llm(client, model: str, files: list[FileDiff], *, max_files: int = 25,
-            min_conf: float = 0.6, verify: bool = True, workers: int = 4) -> list[Finding]:
+            min_conf: float = 0.6, verify: bool = True, workers: int = 4,
+            known: list[Finding] | None = None) -> list[Finding]:
     todo = [f for f in files if f.added and not f.is_binary and not f.is_deleted]
     if len(todo) > max_files:
         warn(f"{len(todo)} files changed; LLM reviews only the {max_files} with the most added lines")
         todo = sorted(todo, key=lambda f: len(f.added), reverse=True)[:max_files]
 
     def one(fd: FileDiff) -> list[Finding]:
-        cands = review_file(client, model, fd)
+        cands = review_file(client, model, fd, [k for k in known or [] if k.file == fd.path])
         return verify_file(client, model, fd, cands, min_conf) if verify else cands
 
     with ThreadPoolExecutor(max_workers=workers) as ex:
