@@ -7,7 +7,7 @@ on:
 permissions:
   contents: read
   pull-requests: write     # only needed when post: "true"
-  security-events: write   # only needed for the SARIF upload
+  security-events: write   # only needed for upload-sarif
 
 jobs:
   review:
@@ -19,8 +19,4 @@ jobs:
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}  # empty on fork PRs -> static-only
           post: "false"      # set "true" to post inline review comments
           fail-on: ""        # e.g. "high" to block merges on high/critical findings
-      - uses: github/codeql-action/upload-sarif@v3
-        if: always() && hashFiles('review-bot.sarif') != ''
-        with:
-          sarif_file: review-bot.sarif
-          category: review-bot
+          upload-sarif: "true"   # findings show up under Security > Code scanning

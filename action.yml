@@ -24,6 +24,10 @@ inputs:
     description: "Path to .reviewbot.toml"
     required: false
     default: ".reviewbot.toml"
+  upload-sarif:
+    description: "Upload review-bot.sarif to GitHub code scanning (needs `security-events: write`)."
+    required: false
+    default: "false"
   extra-args:
     description: "Extra arguments passed to review-bot"
     required: false
@@ -72,3 +76,9 @@ runs:
         set -e
         [ -f review-bot.md ] && cat review-bot.md >> "$GITHUB_STEP_SUMMARY"
         exit $rc
+    - name: Upload SARIF to code scanning
+      if: always() && inputs.upload-sarif == 'true' && hashFiles('review-bot.sarif') != ''
+      uses: github/codeql-action/upload-sarif@v4
+      with:
+        sarif_file: review-bot.sarif
+        category: review-bot

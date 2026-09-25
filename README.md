@@ -212,8 +212,10 @@ jobs:
           fail-on: "high"
 ```
 
-The report is added to the job summary and `review-bot.sarif` is written for
-`github/codeql-action/upload-sarif`. See [`examples/review-bot.yml`](examples/review-bot.yml).
+The report is added to the job summary and `review-bot.sarif` is written. With
+`upload-sarif: "true"` (and `security-events: write`) the Action uploads it to code scanning
+itself, even when `fail-on` fails the step; code scanning is free on public repos and needs
+GitHub Advanced Security on private ones. See [`examples/review-bot.yml`](examples/review-bot.yml).
 Fork PRs don't receive secrets, so they get the static pass only.
 If `.reviewbot-baseline.json` is committed, the checked-out copy is applied automatically.
 
