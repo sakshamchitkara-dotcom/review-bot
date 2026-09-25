@@ -1,0 +1,8 @@
+- id: review-bot
+  name: review-bot (staged changes)
+  description: Review staged changes with review-bot's static checks; fails on high/critical findings.
+  entry: review-bot diff --staged
+  language: python
+  pass_filenames: false
+  args: [--no-llm, --fail-on, high]
+  stages: [pre-commit]
