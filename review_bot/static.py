@@ -219,6 +219,42 @@ def _is_literal_fix(node: ast.Compare, fd: FileDiff) -> str | None:
     return line[:a] + re.sub(r"\bis(\s+not)?\b", op, line[a:b], count=1) + line[b:]
 
 
+# --- JS/TS: floating promises ---------------------------------------------
+ASYNC_DEF = re.compile(
+    r"\basync\s+function\s*\*?\s*([\w$]+)"                       # async function f(
+    r"|\b([\w$]+)\s*[:=]\s*async\b"                              # const f = async / f: async
+    r"|^\s*(?:(?:public|private|protected|static|override)\s+)*async\s+([\w$]+)\s*\(")  # async m() {
+FUNC_HEAD = re.compile(r"\bfunction\b|=>|^\s*(?:(?:public|private|protected|static|async)\s+)*[\w$]+\s*\([^)]*\)\s*(?::[^{]*)?\{\s*$")
+BARE_CALL = r"^\s*(?:this\.|[\w$]+\.)?({names})\s*\(.*\)\s*;?\s*$"
+KNOWN_ASYNC = {"fetch"}
+
+
+def js_missing_await(fd: FileDiff, source: str | None, cfg: Config) -> list[Finding]:
+    """Heuristic: a bare statement calling a function declared `async` in this file (or fetch)."""
+    lines = source.splitlines() if source is not None else []
+    text = source if source is not None else "\n".join(fd.added.values())
+    names = set(KNOWN_ASYNC)
+    for ln in text.splitlines():
+        for m in ASYNC_DEF.finditer(js_code_mask(ln)):
+            names.add(next(g for g in m.groups() if g))
+    call = re.compile(BARE_CALL.format(names="|".join(map(re.escape, sorted(names)))))
+    out = []
+    for ln, raw in fd.added.items():
+        m = call.match(js_code_mask(raw))
+        if not m or ASYNC_DEF.search(raw):
+            continue
+        # ponytail: nearest preceding function header decides whether `await` is legal there;
+        # nested/one-line functions can fool it, so the fix is only offered when it looks async.
+        head = next((lines[i] for i in range(min(ln, len(lines)) - 2, -1, -1) if FUNC_HEAD.search(lines[i])), "")
+        fix = re.sub(r"^(\s*)", r"\1await ", raw, count=1) if "async" in head else None
+        out.append(Finding(fd.path, ln, "medium", "correctness",
+                           f"`{m.group(1)}(...)` returns a promise that is never awaited; errors are lost "
+                           "and ordering is not guaranteed.",
+                           "`await` it, return it, or mark it intentional with `void`.",
+                           rule="missing-await", fix=fix))
+    return out
+
+
 # --- driver ----------------------------------------------------------------
 def run_static(files: list[FileDiff], cfg: Config, get_source: SourceGetter | None = None) -> list[Finding]:
     findings: list[Finding] = []
@@ -232,6 +268,8 @@ def run_static(files: list[FileDiff], cfg: Config, get_source: SourceGetter | No
             src = get_source(fd.path)
             if src is not None:
                 findings.extend(python_ast_checks(fd, src, cfg))
+        if lang == "js" and cfg.rule_on("missing-await"):
+            findings.extend(js_missing_await(fd, get_source(fd.path) if get_source else None, cfg))
     if cfg.rule_on("missing-tests"):
         findings.extend(_missing_tests(files, cfg))
     return dedupe(findings)
