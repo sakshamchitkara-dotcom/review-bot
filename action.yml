@@ -1,0 +1,66 @@
+name: "review-bot"
+description: "Autonomous AI code review for pull requests: static heuristics + Claude, with SARIF and optional PR review comments."
+branding:
+  icon: "eye"
+  color: "purple"
+inputs:
+  anthropic-api-key:
+    description: "Anthropic API key. Leave empty for static-only review."
+    required: false
+    default: ""
+  github-token:
+    description: "Token used to read the PR (and post, if post is true)."
+    required: false
+    default: ${{ github.token }}
+  post:
+    description: "Post findings as a PR review. Off by default."
+    required: false
+    default: "false"
+  fail-on:
+    description: "Fail the step if any finding is at/above this severity (info|low|medium|high|critical). Empty = never fail."
+    required: false
+    default: ""
+  config:
+    description: "Path to .reviewbot.toml"
+    required: false
+    default: ".reviewbot.toml"
+  extra-args:
+    description: "Extra arguments passed to review-bot"
+    required: false
+    default: ""
+outputs:
+  sarif-file:
+    description: "Path to the SARIF report"
+    value: review-bot.sarif
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+    - name: Install review-bot
+      shell: bash
+      run: pip install --quiet "$GITHUB_ACTION_PATH"
+    - name: Review pull request
+      shell: bash
+      env:
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        RB_PR: ${{ github.repository }}#${{ github.event.pull_request.number }}
+        RB_POST: ${{ inputs.post }}
+        RB_FAIL_ON: ${{ inputs.fail-on }}
+        RB_CONFIG: ${{ inputs.config }}
+        RB_EXTRA: ${{ inputs.extra-args }}
+      run: |
+        args=(pr "$RB_PR" --sarif review-bot.sarif --markdown review-bot.md)
+        [ -f "$RB_CONFIG" ] && args+=(--config "$RB_CONFIG")
+        [ "$RB_POST" = "true" ] && args+=(--post)
+        [ -n "$RB_FAIL_ON" ] && args+=(--fail-on "$RB_FAIL_ON")
+        # shellcheck disable=SC2206
+        [ -n "$RB_EXTRA" ] && args+=($RB_EXTRA)
+        set +e
+        review-bot "${args[@]}"
+        rc=$?
+        set -e
+        [ -f review-bot.md ] && cat review-bot.md >> "$GITHUB_STEP_SUMMARY"
+        exit $rc
