@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.4.0 - 2026-09-25
+
+### Added
+- `[[overrides]]` in `.reviewbot.toml`: per-path `[rules]`, `severity_threshold` and
+  `max_function_lines`; later blocks win, `--threshold` still beats them. Rule toggles now gate
+  every finding, including `llm`.
+
+### Fixed
+- Unknown rule ids in `[rules]` / `[overrides.rules]` print a warning with the closest match
+  instead of silently doing nothing.
+- `reviewbot: ignore[...]` on the line above a finding works when the diff has no context there
+  (`git diff -U0`): the line is read from the file. PR sources are fetched once per file.
+
+### Tests
+- Fork PR flow: Actions guard, sources from the fork at the head sha, 403 on posting is a warning.
+
 ## 0.3.0 - 2026-09-25
 
 ### Added
