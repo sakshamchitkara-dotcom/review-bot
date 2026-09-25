@@ -58,6 +58,26 @@ def to_markdown(fs: list[Finding], title: str = "review-bot report") -> str:
 _SARIF_LEVEL = {"critical": "error", "high": "error", "medium": "warning", "low": "note", "info": "note"}
 
 
+_SECURITY_SEVERITY = {"critical": "9.5", "high": "8.0", "medium": "5.5", "low": "3.0", "info": "1.0"}
+
+
+def _sarif_rule(rid: str, fs: list[Finding]) -> dict:
+    """Rule metadata for GitHub code scanning: descriptions from the registry, level from the worst hit."""
+    from .rules import RULES
+
+    worst = max((f.severity for f in fs), key=severity_rank)
+    rule = {"id": rid, "name": rid, "defaultConfiguration": {"level": _SARIF_LEVEL.get(worst, "note")},
+            "properties": {"tags": sorted({f.category for f in fs})}}
+    if rid in RULES:
+        r = RULES[rid]
+        rule["shortDescription"] = {"text": r.summary}
+        rule["fullDescription"] = {"text": r.why}
+        rule["help"] = {"text": r.why, "markdown": f"{r.why}\n\nRun `review-bot explain {rid}` for an example."}
+    if any(f.category == "security" for f in fs):
+        rule["properties"]["security-severity"] = _SECURITY_SEVERITY[worst]
+    return rule
+
+
 def to_sarif(fs: list[Finding]) -> str:
     rule_ids = sorted({f.rule or f.category for f in fs})
     run = {
@@ -65,7 +85,7 @@ def to_sarif(fs: list[Finding]) -> str:
             "name": "review-bot",
             "version": __version__,
             "informationUri": "https://github.com/sakshamchitkara-dotcom/review-bot",
-            "rules": [{"id": r, "name": r} for r in rule_ids],
+            "rules": [_sarif_rule(r, [f for f in fs if (f.rule or f.category) == r]) for r in rule_ids],
         }},
         "results": [
             {
@@ -73,7 +93,7 @@ def to_sarif(fs: list[Finding]) -> str:
                 "level": _SARIF_LEVEL.get(f.severity, "note"),
                 "message": {"text": f.message + (f"\nSuggestion: {f.suggestion}" if f.suggestion else "")},
                 "locations": [{"physicalLocation": {
-                    "artifactLocation": {"uri": f.file},
+                    "artifactLocation": {"uri": f.file, "uriBaseId": "%SRCROOT%"},
                     "region": {"startLine": max(1, f.line)},
                 }}],
                 "properties": {"severity": f.severity, "category": f.category, "source": f.source},
