@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import subprocess
 import sys
@@ -51,7 +52,7 @@ def review(files: list[FileDiff], cfg: Config, get_source, *, use_llm: bool, ver
                 mode = f"static + {cfg.model}"
             except anthropic.AuthenticationError:
                 warn("Anthropic authentication failed; falling back to static checks only")
-    findings, n = apply_suppressions(findings, files)
+    findings, n = apply_suppressions(findings, files, get_source)
     if n:
         warn(f"inline ignore: suppressed {n} finding(s)")
     findings = [f for f in findings if (c := cfg.for_path(f.file)).rule_on(f.rule or f.category)
@@ -156,6 +157,7 @@ def cmd_pr(args, cfg: Config) -> list[Finding]:
     head_repo = (meta["head"].get("repo") or {}).get("full_name", f"{owner}/{repo}")
     h_owner, h_repo = head_repo.split("/", 1)
 
+    @functools.lru_cache(maxsize=None)  # static checks and suppressions both ask; fetch once
     def get_source(path: str) -> str | None:
         return github.fetch_file(h_owner, h_repo, path, head_sha, token)
 

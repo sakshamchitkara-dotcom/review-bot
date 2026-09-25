@@ -143,6 +143,17 @@ eval(expr)  # reviewbot: ignore     <- no brackets: every rule on this line
 
 Rule ids are the ones shown in brackets in the report (`llm` for Claude's findings). A trailing
 ignore on a code line applies to that line only.
+When the diff has no context above a finding (`git diff -U0`), the comment line is read from
+the file itself (working tree for `diff`, the PR's head commit for `pr`):
+
+```
+$ git diff -U0 > u0.diff      # only `+print(x)` on line 3; line 2 is `# reviewbot: ignore[debug-print]`
+$ review-bot diff --file u0.diff --no-llm
+review-bot: inline ignore: suppressed 1 finding(s)
+legacy/old.py:3: LOW [testing/missing-tests] Source changed but no test files were added or modified in this diff.
+    -> Add or update tests covering this change (1 source file(s): `legacy/old.py`).
+1 finding(s): 1 low
+```
 
 Real run on a diff adding `print(banner)  # reviewbot: ignore[debug-print]`, the two sql lines
 above, and an unmarked `print(rows)`:
@@ -440,8 +451,6 @@ push to the PR re-ran the Action: `baseline: suppressed 1 known finding(s)` (`le
 - Static rules are per-line heuristics, not parsers (Python's AST checks aside): shell rules don't
   follow line continuations or heredocs, `string-equality` only sees compares against a literal,
   `missing-await` only knows `async` functions declared in the same file.
-- Inline ignores are read from lines visible in the diff; with `git diff -U0` a comment on the
-  unchanged line above a finding isn't seen.
 - GitLab merge requests are not supported; `pr` is GitHub only.
 - The Action's LLM cache step only runs when an Anthropic key is set; the sandbox has no key, so
   that step is covered by tests (`tests/test_action.py`), not by a real Actions run.
