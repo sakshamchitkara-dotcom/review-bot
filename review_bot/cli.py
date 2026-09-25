@@ -11,7 +11,7 @@ from . import __version__
 from .config import Config, load_config
 from .diff import FileDiff, parse_diff
 from .findings import SEVERITIES, Finding, severity_rank, suggestion_block
-from .llm import make_client, run_llm, warn
+from .llm import default_cache_dir, make_client, run_llm, warn
 from .report import to_markdown, to_sarif, to_terminal
 from .static import run_static
 
@@ -33,7 +33,7 @@ def git_root() -> Path:
 
 
 def review(files: list[FileDiff], cfg: Config, get_source, *, use_llm: bool, verify: bool,
-           min_conf: float) -> tuple[list[Finding], str]:
+           min_conf: float, cache_dir: Path | None = None) -> tuple[list[Finding], str]:
     files = [f for f in files if not cfg.ignored(f.path)]
     findings = run_static(files, cfg, get_source)
     mode = "static only"
@@ -46,12 +46,16 @@ def review(files: list[FileDiff], cfg: Config, get_source, *, use_llm: bool, ver
 
             try:
                 findings += run_llm(client, cfg.model, files, max_files=cfg.max_llm_files,
-                                    min_conf=min_conf, verify=verify, known=findings)
+                                    min_conf=min_conf, verify=verify, known=findings, cache_dir=cache_dir)
                 mode = f"static + {cfg.model}"
             except anthropic.AuthenticationError:
                 warn("Anthropic authentication failed; falling back to static checks only")
     floor = severity_rank(cfg.severity_threshold)
     return [f for f in findings if severity_rank(f.severity) >= floor], mode
+
+
+def _cache_dir(args) -> Path | None:
+    return None if args.no_cache else Path(args.cache_dir) if args.cache_dir else default_cache_dir()
 
 
 def emit(findings: list[Finding], args, title: str) -> None:
@@ -92,8 +96,8 @@ def cmd_diff(args, cfg: Config) -> list[Finding]:
         p = root / path
         return p.read_text(errors="replace") if p.is_file() else None
 
-    findings, mode = review(files, cfg, get_source, use_llm=not args.no_llm,
-                            verify=not args.no_verify, min_conf=args.min_confidence)
+    findings, mode = review(files, cfg, get_source, use_llm=not args.no_llm, verify=not args.no_verify,
+                            min_conf=args.min_confidence, cache_dir=_cache_dir(args))
     emit(findings, args, f"review-bot ({mode})")
     return findings
 
@@ -114,8 +118,8 @@ def cmd_pr(args, cfg: Config) -> list[Finding]:
         return github.fetch_file(h_owner, h_repo, path, head_sha, token)
 
     files = parse_diff(text)
-    findings, mode = review(files, cfg, get_source, use_llm=not args.no_llm,
-                            verify=not args.no_verify, min_conf=args.min_confidence)
+    findings, mode = review(files, cfg, get_source, use_llm=not args.no_llm, verify=not args.no_verify,
+                            min_conf=args.min_confidence, cache_dir=_cache_dir(args))
     title = f"review-bot ({mode}) on {owner}/{repo}#{number}"
     emit(findings, args, title)
     if args.post:
@@ -152,6 +156,8 @@ def build_parser() -> argparse.ArgumentParser:
     common.add_argument("--markdown", metavar="FILE", help="also write a Markdown report")
     common.add_argument("--no-llm", action="store_true", help="static checks only")
     common.add_argument("--no-verify", action="store_true", help="skip the LLM verification pass")
+    common.add_argument("--no-cache", action="store_true", help="always call the LLM, ignoring cached results")
+    common.add_argument("--cache-dir", help="LLM result cache (default: $REVIEW_BOT_CACHE or ~/.cache/review-bot)")
     common.add_argument("--min-confidence", type=float, default=0.6, help="verify-pass keep threshold (0-1)")
     common.add_argument("--threshold", choices=SEVERITIES, help="override severity_threshold")
     common.add_argument("--fail-on", choices=SEVERITIES, help="exit 1 if any finding is at/above this severity")
