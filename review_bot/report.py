@@ -23,6 +23,13 @@ def summary(fs: list[Finding]) -> str:
     return f"{len(fs)} finding(s): " + ", ".join(parts)
 
 
+def severity_table(fs: list[Finding]) -> str:
+    c = Counter(f.severity for f in fs)
+    sevs = ("critical", "high", "medium", "low", "info")
+    return "\n".join(["| " + " | ".join(sevs) + " |", "|" + "---|" * len(sevs),
+                      "| " + " | ".join(str(c[s]) for s in sevs) + " |"])
+
+
 def to_terminal(fs: list[Finding], color: bool = False) -> str:
     lines = []
     for f in sort_findings(fs):
