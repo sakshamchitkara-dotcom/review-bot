@@ -37,6 +37,12 @@ review-bot diff --file x.diff      # any unified diff ('-' for stdin)
 
 review-bot pr owner/repo#123       # fetch a PR via the GitHub REST API (read-only)
 review-bot pr https://github.com/owner/repo/pull/123 --post   # post a review (opt-in)
+review-bot pr https://github.com/owner/repo/pull/123/files    # tab URLs work too
+
+review-bot mr group/project!42     # a GitLab merge request (read-only; $GITLAB_URL for self-hosted)
+review-bot mr https://gitlab.example.com/group/project/-/merge_requests/42
+
+review-bot stats                   # findings by rule and file across the tree (or a ref / --staged / --file)
 
 review-bot baseline                # record findings in every tracked file -> .reviewbot-baseline.json
 review-bot baseline main           # ...or only those in the diff against a ref / --staged / --file
@@ -49,7 +55,7 @@ Common flags:
 
 | Flag | Meaning |
 |---|---|
-| `--format terminal\|markdown\|sarif\|json` | main report format (default terminal) |
+| `--format terminal\|markdown\|sarif\|json\|github` | main report format (default terminal); `github` = Actions annotations |
 | `-o FILE` | write the main report to a file |
 | `--sarif FILE`, `--markdown FILE` | also write these reports |
 | `--threshold SEV` | hide findings below `info\|low\|medium\|high\|critical` |
@@ -64,6 +70,41 @@ Credentials:
 
 - `ANTHROPIC_API_KEY` – enables the LLM pass.
 - `GITHUB_TOKEN` / `GH_TOKEN`, else `gh auth token` – used for `pr`.
+- `GITLAB_TOKEN` – used for `mr` (optional for public projects).
+
+PRs over GitHub's diff limit (300 files) are rebuilt from per-file patches; files GitHub gives no
+patch for (binary, or one huge file) are skipped with a warning. Real run on a 563-file PR:
+
+```
+$ review-bot pr kubernetes/kubernetes#122429 --no-llm --no-baseline
+review-bot: PR diff too large for the diff endpoint; rebuilt it from 563 per-file patch(es)
+...
+4 finding(s): 1 medium, 3 low
+```
+
+### pre-commit
+
+```yaml
+# .pre-commit-config.yaml
+repos:
+  - repo: https://github.com/sakshamchitkara-dotcom/review-bot
+    rev: <commit sha>      # no release tags yet; pin a commit
+    hooks:
+      - id: review-bot     # default args: [--no-llm, --fail-on, high]
+```
+
+The hook reviews the staged diff and blocks the commit on high/critical findings. Real run
+(`pre-commit try-repo . review-bot` with a staged file containing `shell=True` and `eval`):
+
+```
+review-bot (staged changes)..............................................Failed
+- hook id: review-bot
+- exit code: 1
+
+zz_hookcheck.py:3: HIGH [security/eval-exec] Dynamic code execution (eval/exec) on a changed line.
+...
+3 finding(s): 1 high, 1 medium, 1 low
+```
 
 ### Posting safety
 
@@ -303,6 +344,9 @@ Fork PRs don't receive secrets, so they get the static pass only, and their `GIT
 read-only: with `post: "true"` the review can't be posted, so review-bot warns and keeps the
 job summary and SARIF instead of failing the job (`fail-on` still applies).
 If `.reviewbot-baseline.json` is committed, the checked-out copy is applied automatically.
+`annotations: "true"` also prints findings as workflow annotations (`--format github`), shown on
+the PR's Files tab; they need no write permission, so they work on fork PRs too. GitHub shows at
+most 10 error and 10 warning annotations per step.
 
 ## Example (real output)
 
@@ -451,7 +495,9 @@ push to the PR re-ran the Action: `baseline: suppressed 1 known finding(s)` (`le
 - Static rules are per-line heuristics, not parsers (Python's AST checks aside): shell rules don't
   follow line continuations or heredocs, `string-equality` only sees compares against a literal,
   `missing-await` only knows `async` functions declared in the same file.
-- GitLab merge requests are not supported; `pr` is GitHub only.
+- GitLab support is read-only: `mr` never posts notes or discussions. It has been run against
+  public gitlab.com MRs, not a self-hosted instance.
+- `--format github` / the `annotations` input are covered by tests, not yet by a real Actions run.
 - The Action's LLM cache step only runs when an Anthropic key is set; the sandbox has no key, so
   that step is covered by tests (`tests/test_action.py`), not by a real Actions run.
 
