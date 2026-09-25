@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from . import __version__
+from . import baseline as bl
 from .config import Config, load_config
 from .diff import FileDiff, parse_diff
 from .findings import SEVERITIES, Finding, severity_rank, suggestion_block
@@ -33,7 +34,7 @@ def git_root() -> Path:
 
 
 def review(files: list[FileDiff], cfg: Config, get_source, *, use_llm: bool, verify: bool,
-           min_conf: float, cache_dir: Path | None = None) -> tuple[list[Finding], str]:
+           min_conf: float, cache_dir: Path | None = None, known=None) -> tuple[list[Finding], str]:
     files = [f for f in files if not cfg.ignored(f.path)]
     findings = run_static(files, cfg, get_source)
     mode = "static only"
@@ -51,7 +52,12 @@ def review(files: list[FileDiff], cfg: Config, get_source, *, use_llm: bool, ver
             except anthropic.AuthenticationError:
                 warn("Anthropic authentication failed; falling back to static checks only")
     floor = severity_rank(cfg.severity_threshold)
-    return [f for f in findings if severity_rank(f.severity) >= floor], mode
+    findings = [f for f in findings if severity_rank(f.severity) >= floor]
+    if known:
+        before = len(findings)
+        findings = bl.new_only(findings, files, known)
+        warn(f"baseline: suppressed {before - len(findings)} known finding(s)")
+    return findings, mode
 
 
 def _cache_dir(args) -> Path | None:
@@ -78,7 +84,18 @@ def emit(findings: list[Finding], args, title: str) -> None:
         Path(args.markdown).write_text(to_markdown(findings, title))
 
 
-def cmd_diff(args, cfg: Config) -> list[Finding]:
+def _baseline(args):
+    """Counter of known fingerprints, or None. --baseline FILE must exist; the default is optional."""
+    if args.no_baseline:
+        return None
+    path = args.baseline or bl.DEFAULT_PATH
+    if args.baseline or Path(path).is_file():
+        return bl.load(path)
+    return None
+
+
+def local_diff(args) -> tuple[list[FileDiff], object]:
+    """Parse the requested local diff and return (files, get_source)."""
     if args.file:
         text = sys.stdin.read() if args.file == "-" else Path(args.file).read_text()
         root = Path.cwd()
@@ -96,10 +113,32 @@ def cmd_diff(args, cfg: Config) -> list[Finding]:
         p = root / path
         return p.read_text(errors="replace") if p.is_file() else None
 
+    return files, get_source
+
+
+def cmd_diff(args, cfg: Config) -> list[Finding]:
+    files, get_source = local_diff(args)
     findings, mode = review(files, cfg, get_source, use_llm=not args.no_llm, verify=not args.no_verify,
-                            min_conf=args.min_confidence, cache_dir=_cache_dir(args))
+                            min_conf=args.min_confidence, cache_dir=_cache_dir(args), known=_baseline(args))
     emit(findings, args, f"review-bot ({mode})")
     return findings
+
+
+EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"  # git's well-known empty tree
+
+
+def cmd_baseline(args, cfg: Config) -> list[Finding]:
+    if not (args.file or args.base or args.staged):
+        args.base = EMPTY_TREE  # default: every tracked file as it is now
+    if not args.threshold:
+        cfg.severity_threshold = "info"  # record everything so raising/lowering the threshold later still works
+    files, get_source = local_diff(args)
+    findings, _ = review(files, cfg, get_source, use_llm=not args.no_llm, verify=not args.no_verify,
+                         min_conf=args.min_confidence, cache_dir=_cache_dir(args))
+    path = args.baseline or bl.DEFAULT_PATH
+    n = bl.save(path, findings, files)
+    print(f"review-bot: recorded {n} finding(s) in {path}")
+    return []
 
 
 def cmd_pr(args, cfg: Config) -> list[Finding]:
@@ -119,7 +158,7 @@ def cmd_pr(args, cfg: Config) -> list[Finding]:
 
     files = parse_diff(text)
     findings, mode = review(files, cfg, get_source, use_llm=not args.no_llm, verify=not args.no_verify,
-                            min_conf=args.min_confidence, cache_dir=_cache_dir(args))
+                            min_conf=args.min_confidence, cache_dir=_cache_dir(args), known=_baseline(args))
     title = f"review-bot ({mode}) on {owner}/{repo}#{number}"
     emit(findings, args, title)
     if args.post:
@@ -162,6 +201,10 @@ def build_parser() -> argparse.ArgumentParser:
     common.add_argument("--threshold", choices=SEVERITIES, help="override severity_threshold")
     common.add_argument("--fail-on", choices=SEVERITIES, help="exit 1 if any finding is at/above this severity")
 
+    common.add_argument("--baseline", metavar="FILE",
+                        help=f"baseline file (default: ./{bl.DEFAULT_PATH} if present)")
+    common.add_argument("--no-baseline", action="store_true", help="report every finding, ignoring the baseline")
+
     p = argparse.ArgumentParser(prog="review-bot", description="Autonomous AI code reviewer.")
     p.add_argument("--version", action="version", version=f"review-bot {__version__}")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -169,6 +212,11 @@ def build_parser() -> argparse.ArgumentParser:
     d.add_argument("base", nargs="?", help="ref to diff the working tree against (default: HEAD)")
     d.add_argument("--staged", action="store_true", help="review staged changes only")
     d.add_argument("--file", help="read a unified diff from FILE ('-' for stdin) instead of running git")
+    b = sub.add_parser("baseline", parents=[common],
+                       help="record current findings so later runs report only new ones")
+    b.add_argument("base", nargs="?", help="record findings in the diff against this ref (default: whole tree)")
+    b.add_argument("--staged", action="store_true", help="record findings in staged changes only")
+    b.add_argument("--file", help="record findings from a unified diff FILE ('-' for stdin)")
     r = sub.add_parser("pr", parents=[common], help="review a GitHub pull request")
     r.add_argument("ref", help="owner/repo#N or PR URL")
     r.add_argument("--post", action="store_true",
@@ -182,7 +230,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.threshold:
         cfg.severity_threshold = args.threshold
     try:
-        findings = cmd_diff(args, cfg) if args.cmd == "diff" else cmd_pr(args, cfg)
+        findings = {"diff": cmd_diff, "pr": cmd_pr, "baseline": cmd_baseline}[args.cmd](args, cfg)
     except Exception as e:  # noqa: BLE001 - top-level: report cleanly, non-zero exit
         from .github import GitHubError
 
