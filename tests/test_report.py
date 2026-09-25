@@ -31,3 +31,15 @@ def test_sarif_shape():
 
 def test_empty():
     assert summary([]) == "No findings." and json.loads(to_sarif([]))["runs"][0]["results"] == []
+
+
+def test_fixes_render_as_suggestion_blocks():
+    from review_bot.findings import suggestion_block
+
+    fs = [Finding("a.js", 4, "medium", "correctness", "loose eq", "use ===", rule="x", fix="if (a === b) {"),
+          Finding("b.py", 1, "low", "debug", "no fix")]
+    md = to_markdown(fs)
+    assert "### Suggested fixes" in md
+    assert "`a.js:4`: loose eq\n\n```suggestion\nif (a === b) {\n```" in md
+    assert md.count("```suggestion") == 1
+    assert suggestion_block("x = `a` ```b```") == "````suggestion\nx = `a` ```b```\n````"

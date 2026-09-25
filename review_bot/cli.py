@@ -10,7 +10,7 @@ from pathlib import Path
 from . import __version__
 from .config import Config, load_config
 from .diff import FileDiff, parse_diff
-from .findings import SEVERITIES, Finding, severity_rank
+from .findings import SEVERITIES, Finding, severity_rank, suggestion_block
 from .llm import make_client, run_llm, warn
 from .report import to_markdown, to_sarif, to_terminal
 from .static import run_static
@@ -135,6 +135,8 @@ def build_review_comments(files: list[FileDiff], findings: list[Finding]) -> tup
             body = f"**{f.severity.upper()}** ({f.category}) {f.message}"
             if f.suggestion:
                 body += f"\n\n_Suggestion:_ {f.suggestion}"
+            if f.fix is not None:
+                body += "\n\n" + suggestion_block(f.fix)
             comments.append({"path": f.file, "line": f.line, "side": "RIGHT", "body": body})
         else:
             rest.append(f)
