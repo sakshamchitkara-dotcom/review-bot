@@ -78,7 +78,24 @@ run on every push without piling up duplicates; if nothing is new, nothing is po
 
 ## Checks
 
-`review-bot explain <rule>` prints the reasoning and a flagged/fixed example for each.
+`review-bot explain <rule>` prints the reasoning and a flagged/fixed example for each:
+
+```
+$ review-bot explain curl-pipe-shell
+curl-pipe-shell (high; shell)
+
+Remote script piped straight into a shell.
+
+Whatever the server (or anyone in the middle) returns runs immediately, and a dropped connection can run half a script.
+
+Flagged:
+    curl -fsSL https://x/install.sh | sh
+
+Instead:
+    curl -fsSLo install.sh https://x/install.sh && sha256sum -c install.sh.sha256 && sh install.sh
+
+Disable: `curl-pipe-shell = false` under [rules] in .reviewbot.toml, or `reviewbot: ignore[curl-pipe-shell]` on the line.
+```
 
 | Rule | Languages | Severity |
 |---|---|---|
@@ -126,6 +143,19 @@ eval(expr)  # reviewbot: ignore     <- no brackets: every rule on this line
 
 Rule ids are the ones shown in brackets in the report (`llm` for Claude's findings). A trailing
 ignore on a code line applies to that line only.
+
+Real run on a diff adding `print(banner)  # reviewbot: ignore[debug-print]`, the two sql lines
+above, and an unmarked `print(rows)`:
+
+```
+$ review-bot diff --file sup.diff --no-llm
+review-bot: inline ignore: suppressed 2 finding(s)
+tools/report.py:1: LOW [testing/missing-tests] Source changed but no test files were added or modified in this diff.
+    -> Add or update tests covering this change (1 source file(s): `tools/report.py`).
+tools/report.py:4: LOW [debug/debug-print] Debug output / breakpoint left in code.
+    -> Remove it or use the project's logger.
+2 finding(s): 2 low
+```
 
 ## Configuration: `.reviewbot.toml`
 
@@ -244,19 +274,18 @@ inventory.py:11: MEDIUM [correctness/mutable-default] Mutable default argument i
     -> Default to None and create the object inside the function.
 inventory.py:16: MEDIUM [error-handling/bare-except] Bare `except:` also swallows KeyboardInterrupt/SystemExit and hides bugs.
     -> Catch specific exceptions, e.g. `except ValueError:`.
+    fix: except Exception:
 inventory.py:24: MEDIUM [security/shell-injection] subprocess call with shell=True.
     -> Pass an argument list and drop shell=True.
 web.js:3: MEDIUM [error-handling/bare-except] Empty catch block silently swallows errors.
     -> Handle, log, or rethrow the error.
 inventory.py:2: LOW [testing/missing-tests] Source changed but no test files were added or modified in this diff.
-    -> Add or update tests covering this change.
+    -> Add or update tests covering this change (2 source file(s): `inventory.py`, `web.js`).
 inventory.py:12: LOW [debug/debug-print] Debug output / breakpoint left in code.
     -> Remove it or use the project's logger.
-web.js:1: LOW [testing/missing-tests] Source changed but no test files were added or modified in this diff.
-    -> Add or update tests covering this change.
 web.js:2: LOW [debug/debug-print] Debug output / breakpoint left in code.
     -> Remove it or use the project's logger.
-11 finding(s): 1 critical, 2 high, 4 medium, 4 low
+10 finding(s): 1 critical, 2 high, 4 medium, 3 low
 ```
 
 ## End to end on a real PR
@@ -290,6 +319,68 @@ Reviews on the PR from `gh api repos/.../pulls/1/reviews` (id, author, state, bo
 The first two show the duplicate-comment problem that the dedupe fix addresses; this sandbox
 also surfaced the missing `await` suggestion inside loops and Python-only `eval` advice for TS.
 
+### Shell, Java, Kotlin and Ruby on a real PR
+
+[Sandbox PR #2](https://github.com/sakshamchitkara-dotcom/review-bot-sandbox/pull/2) adds a
+deploy script and Java, Kotlin and Ruby files with known bugs, a `reviewbot: ignore[unsafe-html]`
+comment in `banner.rb`, and a committed `.reviewbot-baseline.json` that knows `legacy.rb`. Its
+workflow runs the Action with `post: "true"` and `upload-sarif: "true"`. From the job log:
+
+```
+review-bot: ANTHROPIC_API_KEY not set; running static checks only
+review-bot: inline ignore: suppressed 1 finding(s)
+review-bot: baseline: suppressed 2 known finding(s)
+review-bot: posted review https://github.com/sakshamchitkara-dotcom/review-bot-sandbox/pull/2#pullrequestreview-5316328200
+...
+Successfully uploaded results
+Analysis upload status is complete.
+```
+
+The posted review body:
+
+```
+## review-bot (static only) on sakshamchitkara-dotcom/review-bot-sandbox#2
+
+17 finding(s): 6 high, 3 medium, 8 low
+
+| critical | high | medium | low | info |
+|---|---|---|---|---|
+| 0 | 6 | 3 | 8 | 0 |
+
+17 new inline comment(s); 0 already posted.
+```
+
+Code scanning alerts from the uploaded SARIF
+(`gh api repos/…/code-scanning/alerts?ref=refs/pull/2/merge`, first 9 of 17: number, rule,
+severity shown by GitHub, path, line):
+
+```
+1  sql-concat        high     app/models/report.rb           3
+2  shell-injection   high     app/models/report.rb           4
+3  unsafe-html       high     app/models/report.rb           5
+4  curl-pipe-shell   high     scripts/deploy.sh              5
+5  unquoted-rm       error    scripts/deploy.sh              6
+6  eval-exec         high     scripts/deploy.sh              8
+7  bare-except       warning  app/models/report.rb           6
+8  string-equality   warning  src/main/java/shop/Auth.java   5
+9  bare-except       warning  src/main/java/shop/Auth.java  10
+```
+
+The `unquoted-rm` inline comment ends with a one-click fix:
+
+````
+```suggestion
+rm -rf "${BUILD_DIR:?}"/
+```
+````
+
+That run also showed two things fixed afterwards: `missing-tests` was posted once per changed
+file (five identical comments; now one per diff), and code scanning's own PR comments
+duplicated review-bot's (now a notice; see [GitHub Action](#github-action)). After those fixes a
+push to the PR re-ran the Action: `baseline: suppressed 1 known finding(s)` (`legacy.rb`'s
+`missing-tests` is folded into the single per-diff finding) and
+`every finding is already on the PR; nothing new to post`.
+
 ## How the LLM pass works
 
 - Each file's hunks are rendered with new-side line numbers and split into chunks (~60k chars).
@@ -306,6 +397,17 @@ also surfaced the missing `await` suggestion inside loops and Python-only `eval`
   drops back to static-only.
 - The diff is treated as untrusted input; the system prompts tell the model not to follow
   instructions inside it.
+
+## Known limits
+
+- Static rules are per-line heuristics, not parsers (Python's AST checks aside): shell rules don't
+  follow line continuations or heredocs, `string-equality` only sees compares against a literal,
+  `missing-await` only knows `async` functions declared in the same file.
+- Inline ignores are read from lines visible in the diff; with `git diff -U0` a comment on the
+  unchanged line above a finding isn't seen.
+- GitLab merge requests are not supported; `pr` is GitHub only.
+- The Action's LLM cache step only runs when an Anthropic key is set; the sandbox has no key, so
+  that step is covered by tests (`tests/test_action.py`), not by a real Actions run.
 
 ## Development
 
