@@ -82,11 +82,17 @@ def cmd_diff(args, cfg: Config) -> list[Finding]:
         text = git_diff(args.base, args.staged)
         root = git_root()
 
+    files = parse_diff(text)
+    new_files = {f.path: f for f in files if f.is_new}
+
     def get_source(path: str) -> str | None:
+        if args.file and path in new_files:  # a new file's added lines are the whole file
+            fd = new_files[path]
+            return "\n".join(fd.added[i] for i in sorted(fd.added)) + "\n"
         p = root / path
         return p.read_text(errors="replace") if p.is_file() else None
 
-    findings, mode = review(parse_diff(text), cfg, get_source, use_llm=not args.no_llm,
+    findings, mode = review(files, cfg, get_source, use_llm=not args.no_llm,
                             verify=not args.no_verify, min_conf=args.min_confidence)
     emit(findings, args, f"review-bot ({mode})")
     return findings
