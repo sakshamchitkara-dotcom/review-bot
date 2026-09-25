@@ -78,7 +78,7 @@ run on every push without piling up duplicates; if nothing is new, nothing is po
 |---|---|---|
 | `secret` – AWS/GitHub/Anthropic/OpenAI/Slack/Google keys, private keys, hardcoded passwords | all files | critical/high |
 | `sql-concat` – SQL built with `+`, f-strings, `.format`, `%`, `${}` | code | high |
-| `eval-exec` – `eval`/`exec`/`new Function` | py, js/ts, rb, php | high |
+| `eval-exec` – `eval`/`exec`/`new Function` | py, js/ts, rb, php, shell | high |
 | `shell-injection` – `shell=True` | py | medium |
 | `unsafe-html` – `dangerouslySetInnerHTML`, `innerHTML =` / `outerHTML =` (unless visibly sanitized) | js/ts | high |
 | `bare-except` – `except:` / empty `catch {}` (fix: `except Exception:`) | py, js/ts, java, c#, php | medium |
@@ -89,7 +89,9 @@ run on every push without piling up duplicates; if nothing is new, nothing is po
 | `panic` – `panic(` outside tests | go | low |
 | `unsafe-block` – new `unsafe { }` / `unsafe fn` / `unsafe impl` | rust | medium |
 | `unwrap` – `.unwrap()` outside tests and `#[cfg(test)]` modules (`.expect("…")` is allowed) | rust | low |
-| `debug-print` – `print`, `breakpoint`, `console.log`, `debugger`, `binding.pry`, `dbg!`, `println!`, … (non-test files) | many | low |
+| `curl-pipe-shell` – `curl … \| sh` / `wget … \| bash` | shell | high |
+| `unquoted-rm` – `rm -r` with an unquoted `$VAR` (fix: `"${VAR:?}"`) | shell | high |
+| `debug-print` – `print`, `breakpoint`, `console.log`, `debugger`, `binding.pry`, `dbg!`, `println!`, `set -x`, … (non-test files) | many | low |
 | `todo` – TODO/FIXME/XXX/HACK | all | info |
 | `missing-tests` – source changed but no test file touched | code | low |
 | `huge-function` – function over `max_function_lines` touching the change | py (AST) | medium |

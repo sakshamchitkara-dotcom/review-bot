@@ -15,7 +15,7 @@ SourceGetter = Callable[[str], "str | None"]
 LANG = {
     ".py": "python", ".js": "js", ".jsx": "js", ".ts": "js", ".tsx": "js", ".mjs": "js",
     ".cjs": "js", ".go": "go", ".rb": "ruby", ".java": "java", ".kt": "java", ".php": "php",
-    ".rs": "rust", ".cs": "csharp", ".sh": "shell", ".c": "c", ".cpp": "c", ".h": "c",
+    ".rs": "rust", ".cs": "csharp", ".sh": "shell", ".bash": "shell", ".zsh": "shell", ".c": "c", ".cpp": "c", ".h": "c",
 }
 CODE_EXTS = set(LANG)
 
@@ -58,6 +58,7 @@ DEBUG = {
     "java": re.compile(r"System\.(?:out|err)\.print(?:ln)?\(|\.printStackTrace\(\)"),
     "php": re.compile(r"\b(?:var_dump|print_r|dd)\("),
     "rust": re.compile(r"\bdbg!\(|^\s*e?println!\("),
+    "shell": re.compile(r"^\s*set\s+-\w*x"),
 }
 TODO = re.compile(r"(?:#|//|/\*|--|<!--)\s*.*\b(TODO|FIXME|XXX|HACK)\b")
 BARE_EXCEPT = re.compile(r"^\s*except\s*:")
@@ -70,10 +71,12 @@ EVAL = {
     "js": re.compile(r"(?<![\w.])eval\s*\(|new\s+Function\s*\(|setTimeout\(\s*[\"'`]"),
     "ruby": re.compile(r"(?<![\w.])(?:eval|instance_eval|class_eval)\b"),
     "php": re.compile(r"(?<![\w>])eval\s*\("),
+    "shell": re.compile(r"(?:^|[;&|]\s*)eval\s"),
 }
 EVAL_ADVICE = {
     "python": "Avoid eval/exec; parse data explicitly (e.g. json.loads / ast.literal_eval).",
     "js": "Avoid eval/new Function; use JSON.parse for data or a lookup table of allowed functions.",
+    "shell": "Avoid eval; use arrays for dynamic arguments (`cmd \"${args[@]}\"`).",
 }
 SHELL_TRUE = re.compile(r",\s*shell\s*=\s*True\b")  # kwarg in a call, not prose
 
@@ -105,6 +108,26 @@ def rust_test_start(fd: FileDiff, source: str | None) -> int | None:
     """
     lines = enumerate(source.splitlines(), 1) if source is not None else fd.added.items()
     return next((ln for ln, t in lines if RUST_CFG_TEST.match(t)), None)
+
+# --- Shell (shellcheck-style heuristics) ------------------------------------
+CURL_PIPE_SH = re.compile(r"\b(?:curl|wget)\b[^|#]*\|\s*(?:sudo\s+)?(?:ba|z|da)?sh\b")
+SH_RM_RECURSIVE = re.compile(r"(?:^|[;&|]\s*|\bsudo\s+)rm\s+(?:-\w+\s+)*-\w*[rR]")
+SH_VAR = re.compile(r"\$\{?([A-Za-z_]\w*)\}?")
+
+
+def _unquoted_rm(text: str) -> str | None:
+    """`rm -r` with an unquoted $VAR (SC2086/SC2115): returns the line with each such var as "${VAR:?}"."""
+    code = js_code_mask(text.split(" #", 1)[0])  # same quote rules: "..." and '...' are masked
+    if not SH_RM_RECURSIVE.search(code):
+        return None
+    hits = [m for m in SH_VAR.finditer(code)]
+    if not hits:
+        return None
+    fixed = text
+    for m in reversed(hits):
+        fixed = fixed[:m.start()] + f'"${{{m.group(1)}:?}}"' + fixed[m.end():]
+    return fixed
+
 
 UNSAFE_HTML = re.compile(r"\bdangerouslySetInnerHTML\b|\.(?:inner|outer)HTML\s*\+?=(?!=)")
 SANITIZED = re.compile(r"(?i)sanitize|DOMPurify|escapeHtml")
@@ -185,6 +208,15 @@ def scan_line(path: str, lang: str | None, ln: int, text: str, cfg: Config,
             yield Finding(path, ln, "medium", "security", "New `unsafe` code bypasses the borrow checker.",
                           "Add a `// SAFETY:` comment stating the invariant, or avoid unsafe.",
                           rule="unsafe-block")
+    if lang == "shell" and not text.lstrip().startswith("#"):
+        if on("curl-pipe-shell") and CURL_PIPE_SH.search(text):
+            yield Finding(path, ln, "high", "security", "Remote script piped straight into a shell.",
+                          "Download it, verify a checksum or signature, then run it.", rule="curl-pipe-shell")
+        if on("unquoted-rm") and (fixed := _unquoted_rm(text)) is not None:
+            yield Finding(path, ln, "high", "correctness",
+                          "Recursive `rm` with an unquoted variable: if it is empty or has spaces, the "
+                          "wrong paths are deleted (`rm -rf $DIR/` becomes `rm -rf /`).",
+                          "Quote it and fail on empty: `\"${DIR:?}\"`.", rule="unquoted-rm", fix=fixed)
     if on("unsafe-html") and lang == "js" and UNSAFE_HTML.search(js_code_mask(text)) and not SANITIZED.search(text):
         yield Finding(path, ln, "high", "security",
                       "Raw HTML injection (dangerouslySetInnerHTML / innerHTML) is an XSS sink.",
