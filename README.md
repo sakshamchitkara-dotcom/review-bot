@@ -217,7 +217,9 @@ The report is added to the job summary and `review-bot.sarif` is written. With
 `upload-sarif: "true"` (and `security-events: write`) the Action uploads it to code scanning
 itself, even when `fail-on` fails the step; code scanning is free on public repos and needs
 GitHub Advanced Security on private ones. See [`examples/review-bot.yml`](examples/review-bot.yml).
-Fork PRs don't receive secrets, so they get the static pass only.
+Fork PRs don't receive secrets, so they get the static pass only, and their `GITHUB_TOKEN` is
+read-only: with `post: "true"` the review can't be posted, so review-bot warns and keeps the
+job summary and SARIF instead of failing the job (`fail-on` still applies).
 If `.reviewbot-baseline.json` is committed, the checked-out copy is applied automatically.
 
 ## Example (real output)

@@ -173,8 +173,16 @@ def cmd_pr(args, cfg: Config) -> list[Finding]:
         if not fresh and (not extra or any(extra in b for b in seen_bodies)):
             print("review-bot: every finding is already on the PR; nothing new to post", file=sys.stderr)
         else:
-            url = github.post_review(owner, repo, number, head_sha, body, fresh, token)
-            print(f"review-bot: posted review {url}", file=sys.stderr)
+            try:
+                url = github.post_review(owner, repo, number, head_sha, body, fresh, token)
+                print(f"review-bot: posted review {url}", file=sys.stderr)
+            except github.GitHubError as e:
+                if e.status != 403:
+                    raise
+                # e.g. a fork PR: Actions hands it a read-only GITHUB_TOKEN. The reports are
+                # already written, so warn instead of failing the job over the comment.
+                warn(f"could not post the review (HTTP 403: token lacks write access, e.g. a fork PR); "
+                     f"findings are in the report only. {e}")
     return findings
 
 
