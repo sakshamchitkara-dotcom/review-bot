@@ -60,6 +60,7 @@ DEBUG = {
 }
 TODO = re.compile(r"(?:#|//|/\*|--|<!--)\s*.*\b(TODO|FIXME|XXX|HACK)\b")
 BARE_EXCEPT = re.compile(r"^\s*except\s*:")
+BARE_EXCEPT_SUB = re.compile(r"^(\s*)except\s*:")
 EMPTY_CATCH = re.compile(r"catch\s*(?:\([^)]*\))?\s*\{\s*\}")
 SQL_KW = re.compile(r"""(?i)["'`][^"'`]*\b(SELECT\b.+\bFROM|INSERT\s+INTO|UPDATE\b.+\bSET|DELETE\s+FROM)\b""")
 SQL_DYNAMIC = re.compile(r"""["'`]\s*\+|\+\s*["'`]|\bf["']|\.format\(|["']\s*%\s*[\w(]|\$\{""")
@@ -107,7 +108,8 @@ def scan_line(path: str, lang: str | None, ln: int, text: str, cfg: Config) -> I
         if lang == "python" and BARE_EXCEPT.search(text):
             yield Finding(path, ln, "medium", "error-handling",
                           "Bare `except:` also swallows KeyboardInterrupt/SystemExit and hides bugs.",
-                          "Catch specific exceptions, e.g. `except ValueError:`.", rule="bare-except")
+                          "Catch specific exceptions, e.g. `except ValueError:`.", rule="bare-except",
+                          fix=BARE_EXCEPT_SUB.sub(r"\1except Exception:", text, count=1))
         elif lang in ("js", "java", "csharp", "php") and EMPTY_CATCH.search(text):
             yield Finding(path, ln, "medium", "error-handling", "Empty catch block silently swallows errors.",
                           "Handle, log, or rethrow the error.", rule="bare-except")
@@ -159,8 +161,20 @@ def python_ast_checks(fd: FileDiff, source: str, cfg: Config) -> list[Finding]:
                         right.value is not None and not isinstance(right.value, bool) and right.value is not ...:
                     out.append(Finding(fd.path, node.lineno, "medium", "correctness",
                                        "`is` comparison with a literal compares identity, not value.",
-                                       "Use `==` / `!=`.", rule="is-literal"))
+                                       "Use `==` / `!=`.", rule="is-literal", fix=_is_literal_fix(node, fd)))
     return out
+
+
+def _is_literal_fix(node: ast.Compare, fd: FileDiff) -> str | None:
+    """Rewrite `a is 5` -> `a == 5` using AST columns; only for simple one-line, one-op ASCII compares."""
+    line = fd.added.get(node.lineno)
+    right = node.comparators[0]
+    if line is None or len(node.ops) != 1 or not line.isascii() or \
+            node.left.end_lineno != node.lineno or right.lineno != node.lineno:
+        return None
+    a, b = node.left.end_col_offset, right.col_offset
+    op = "!=" if isinstance(node.ops[0], ast.IsNot) else "=="
+    return line[:a] + re.sub(r"\bis(\s+not)?\b", op, line[a:b], count=1) + line[b:]
 
 
 # --- driver ----------------------------------------------------------------

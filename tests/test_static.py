@@ -102,3 +102,12 @@ def test_low_noise_cases():
         '+MSG = "never use shell=True"\n'
     )
     assert run_static(parse_diff(diff), Config(rules={"missing-tests": False})) == []
+
+
+def test_python_fixes():
+    by = {(f.line, f.rule): f.fix for f in _run()}
+    assert by[(12, "bare-except")] == "    except Exception:"
+    assert by[(18, "is-literal")] == '    if expr == "":'
+    files = parse_diff("--- /dev/null\n+++ b/m.py\n@@ -0,0 +1 @@\n+ok = (x is not 3) or y\n")
+    (f,) = [f for f in run_static(files, Config(), lambda p: "ok = (x is not 3) or y\n") if f.rule == "is-literal"]
+    assert f.fix == "ok = (x != 3) or y"
