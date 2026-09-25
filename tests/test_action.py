@@ -67,6 +67,12 @@ def test_action_step_all_inputs_and_exit_code(tmp_path):
                         "--threshold", "medium"]
 
 
+def test_action_step_annotations_input(tmp_path):
+    _, argv, _, _ = run_step(tmp_path, RB_ANNOTATIONS="true")
+    assert argv[6:] == ["--format", "github"]
+    assert "--format" not in run_step(tmp_path, RB_ANNOTATIONS="false")[1]
+
+
 def test_action_step_notices_duplicate_feedback(tmp_path):
     rc, _, _, stdout = run_step(tmp_path, RB_POST="true", RB_UPLOAD="true")
     assert rc == 0 and "::notice title=review-bot::post and upload-sarif are both on" in stdout
