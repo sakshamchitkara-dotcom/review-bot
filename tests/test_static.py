@@ -172,3 +172,11 @@ def test_go_basics():
                                "v, ok := m[k]", '\tpanic("boom")', "// x, _ := f()"])
     assert got == {(1, "ignored-error"), (2, "ignored-error"), (5, "panic")}
     assert _src("svc/main_test.go", ['panic("ok in tests")']) == set()
+
+
+def test_rust_basics():
+    got = _src("src/lib.rs", ["let n = s.parse::<u32>().unwrap();", "unsafe { ptr.read() }",
+                              'dbg!(n);', "let m = s.parse::<u32>().expect(\"validated above\");",
+                              "// .unwrap() is fine here"])
+    assert got == {(1, "unwrap"), (2, "unsafe-block"), (3, "debug-print")}
+    assert _src("tests/it.rs", ["x.unwrap();"]) == set()
