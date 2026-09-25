@@ -14,7 +14,7 @@ from .diff import FileDiff, parse_diff
 from .findings import SEVERITIES, Finding, severity_rank, suggestion_block
 from .llm import default_cache_dir, make_client, run_llm, warn
 from .report import to_markdown, to_sarif, to_terminal
-from .static import run_static
+from .static import apply_suppressions, run_static
 
 
 def git_diff(base: str | None, staged: bool) -> str:
@@ -51,6 +51,9 @@ def review(files: list[FileDiff], cfg: Config, get_source, *, use_llm: bool, ver
                 mode = f"static + {cfg.model}"
             except anthropic.AuthenticationError:
                 warn("Anthropic authentication failed; falling back to static checks only")
+    findings, n = apply_suppressions(findings, files)
+    if n:
+        warn(f"inline ignore: suppressed {n} finding(s)")
     floor = severity_rank(cfg.severity_threshold)
     findings = [f for f in findings if severity_rank(f.severity) >= floor]
     if known:
