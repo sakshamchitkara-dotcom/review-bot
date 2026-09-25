@@ -14,7 +14,7 @@ from .config import Config, load_config
 from .diff import FileDiff, parse_diff
 from .findings import SEVERITIES, Finding, severity_rank, suggestion_block
 from .llm import default_cache_dir, make_client, run_llm, warn
-from .report import severity_table, summary, to_markdown, to_sarif, to_terminal
+from .report import severity_table, summary, to_github, to_markdown, to_sarif, to_terminal
 from .static import apply_suppressions, run_static
 
 
@@ -76,6 +76,8 @@ def emit(findings: list[Finding], args, title: str) -> None:
         text = to_markdown(findings, title)
     elif fmt == "sarif":
         text = to_sarif(findings)
+    elif fmt == "github":
+        text = to_github(findings)
     else:
         text = json.dumps([f.to_dict() for f in findings], indent=2)
     if args.output:
@@ -235,7 +237,8 @@ def cmd_explain(rule: str | None) -> int:
 def build_parser() -> argparse.ArgumentParser:
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--config", help="path to .reviewbot.toml (default: ./.reviewbot.toml if present)")
-    common.add_argument("--format", choices=["terminal", "markdown", "sarif", "json"], default="terminal")
+    common.add_argument("--format", choices=["terminal", "markdown", "sarif", "json", "github"], default="terminal",
+                        help="main report format; github = Actions annotations (::error file=…,line=…::…)")
     common.add_argument("-o", "--output", help="write the main report to this file instead of stdout")
     common.add_argument("--sarif", metavar="FILE", help="also write a SARIF report")
     common.add_argument("--markdown", metavar="FILE", help="also write a Markdown report")

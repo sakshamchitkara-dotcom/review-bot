@@ -1,7 +1,7 @@
 import json
 
 from review_bot.findings import Finding
-from review_bot.report import summary, to_markdown, to_sarif, to_terminal
+from review_bot.report import summary, to_github, to_markdown, to_sarif, to_terminal
 
 FS = [
     Finding("a.py", 3, "low", "debug", "print left", "remove", rule="debug-print"),
@@ -59,3 +59,14 @@ def test_terminal_shows_one_line_fix():
     out = to_terminal([Finding("a.sh", 2, "high", "correctness", "unquoted", "quote it", rule="unquoted-rm",
                                fix='    rm -rf "${D:?}"/')])
     assert out.splitlines()[1:3] == ["    -> quote it", '    fix: rm -rf "${D:?}"/']
+
+
+def test_github_annotations_escape_and_levels():
+    fs = FS + [Finding("dir,x/c:1.js", 0, "medium", "correctness", "50% off\nline two", "use ===",
+                       rule="loose-equality", fix="a === b")]
+    lines = to_github(fs).split("\n")
+    assert lines[0] == "::error file=b.py,line=1,title=review-bot critical%3A secret::key | leaked%0Arotate"
+    assert lines[1] == ("::warning file=dir%2Cx/c%3A1.js,line=1,title=review-bot medium%3A loose-equality::"
+                        "50%25 off%0Aline two%0Ause ===%0Afix: a === b")
+    assert lines[2].startswith("::notice file=a.py,line=3,")
+    assert lines[3] == "3 finding(s): 1 critical, 1 medium, 1 low"
