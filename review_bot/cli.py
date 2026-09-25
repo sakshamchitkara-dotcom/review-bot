@@ -54,8 +54,8 @@ def review(files: list[FileDiff], cfg: Config, get_source, *, use_llm: bool, ver
     findings, n = apply_suppressions(findings, files)
     if n:
         warn(f"inline ignore: suppressed {n} finding(s)")
-    floor = severity_rank(cfg.severity_threshold)
-    findings = [f for f in findings if severity_rank(f.severity) >= floor]
+    findings = [f for f in findings if (c := cfg.for_path(f.file)).rule_on(f.rule or f.category)
+                and severity_rank(f.severity) >= severity_rank(c.severity_threshold)]
     if known:
         before = len(findings)
         findings = bl.new_only(findings, files, known)
@@ -134,7 +134,7 @@ def cmd_baseline(args, cfg: Config) -> list[Finding]:
     if not (args.file or args.base or args.staged):
         args.base = EMPTY_TREE  # default: every tracked file as it is now
     if not args.threshold:
-        cfg.severity_threshold = "info"  # record everything so raising/lowering the threshold later still works
+        cfg.set_threshold("info")  # record everything so raising/lowering the threshold later still works
     files, get_source = local_diff(args)
     findings, _ = review(files, cfg, get_source, use_llm=not args.no_llm, verify=not args.no_verify,
                          min_conf=args.min_confidence, cache_dir=_cache_dir(args))
@@ -276,7 +276,7 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_explain(args.rule)
     cfg = load_config(args.config)
     if args.threshold:
-        cfg.severity_threshold = args.threshold
+        cfg.set_threshold(args.threshold)
     try:
         findings = {"diff": cmd_diff, "pr": cmd_pr, "baseline": cmd_baseline}[args.cmd](args, cfg)
     except Exception as e:  # noqa: BLE001 - top-level: report cleanly, non-zero exit
