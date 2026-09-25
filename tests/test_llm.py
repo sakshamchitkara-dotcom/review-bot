@@ -30,8 +30,8 @@ class FakeClient:
         return NS(stop_reason=self.stop, content=[NS(type="text", text=json.dumps(payload))])
 
 
-def finding(line, msg="off by one"):
-    return {"line": line, "severity": "high", "category": "bug", "message": msg, "suggestion": "use -1"}
+def finding(line, msg="off by one", fix=""):
+    return {"line": line, "severity": "high", "category": "bug", "message": msg, "suggestion": "use -1", "fix": fix}
 
 
 def test_review_then_verify_filters_low_confidence():
@@ -106,3 +106,13 @@ def test_real_sdk_request_shape_via_mock_transport():
     assert sent[0]["model"] == "claude-opus-5-5"
     assert sent[0]["output_config"]["format"]["schema"]["required"] == ["findings"]
     assert sent[0]["output_config"]["effort"] == "high" and sent[1]["output_config"]["effort"] == "medium"
+
+
+def test_llm_fix_kept_only_when_one_line_and_changed():
+    client = FakeClient(review={"findings": [finding(2, "a", "    return xs[len(xs) - 1]"),
+                                             finding(2, "b", "    return xs[len(xs)]"),
+                                             finding(2, "c", "x\ny"), finding(2, "d")]})
+    got = run_llm(client, "m", parse_diff(DIFF), verify=False)
+    assert [(f.message, f.fix) for f in got] == [("a", "    return xs[len(xs) - 1]"), ("b", None),
+                                                  ("c", None), ("d", None)]
+    assert "fix" in client.calls[0]["output_config"]["format"]["schema"]["properties"]["findings"]["items"]["required"]
