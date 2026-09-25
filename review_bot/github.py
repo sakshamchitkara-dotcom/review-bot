@@ -87,6 +87,24 @@ def assert_can_post(owner: str, repo: str, token: str | None) -> None:
     raise GitHubError(f"refusing to post: {viewer or 'token owner'} does not own or administer {full}")
 
 
+def _paged(path: str, token: str | None) -> list[dict]:
+    out, page = [], 1
+    while True:
+        batch = json.loads(_api(f"{path}?per_page=100&page={page}", token))
+        out += batch
+        if len(batch) < 100:
+            return out
+        page += 1
+
+
+def existing_feedback(owner: str, repo: str, number: int, token: str | None) -> tuple[set, set]:
+    """(path, line, body) of inline comments and bodies of reviews already on the PR."""
+    base = f"/repos/{owner}/{repo}/pulls/{number}"
+    comments = {(c["path"], c.get("line"), c["body"]) for c in _paged(f"{base}/comments", token)}
+    bodies = {r.get("body") or "" for r in _paged(f"{base}/reviews", token)}
+    return comments, bodies
+
+
 def post_review(owner: str, repo: str, number: int, commit_id: str, body: str,
                 comments: list[dict], token: str) -> str:
     payload = {"commit_id": commit_id, "body": body, "event": "COMMENT", "comments": comments}
