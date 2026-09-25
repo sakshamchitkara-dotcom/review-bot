@@ -13,7 +13,7 @@ jobs:
   review:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4   # so .reviewbot.toml is available
+      - uses: actions/checkout@v7   # so .reviewbot.toml is available
       - uses: sakshamchitkara-dotcom/review-bot@main
         with:
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}  # empty on fork PRs -> static-only
