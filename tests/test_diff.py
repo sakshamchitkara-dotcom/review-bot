@@ -36,3 +36,8 @@ def test_plain_unified_diff_without_git_header():
 def test_render_roundtrip_contains_hunks():
     (f,) = parse_diff("--- a/x.py\n+++ b/x.py\n@@ -1 +1,2 @@\n a = 1\n+b = 2\n")
     assert "+b = 2" in f.text() and f.text().startswith("--- a/x.py")
+
+
+def test_visible_lines_excludes_removed():
+    (f,) = parse_diff("--- a/x.py\n+++ b/x.py\n@@ -1,3 +1,3 @@\n a\n-b\n+c\n d\n")
+    assert f.visible_lines() == {1, 2, 3} and f.added == {2: "c"}
