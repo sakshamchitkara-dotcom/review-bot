@@ -272,3 +272,13 @@ def test_staged_review_before_the_first_commit(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
     assert main(["diff", "--staged", "--no-llm", "--fail-on", "high", "--format", "json"]) == 1
     assert "eval-exec" in {f["rule"] for f in json.loads(capsys.readouterr().out)}
+
+
+def test_stats_counts_by_rule_and_file(capsys):
+    assert main(["stats", "--file", str(FIX / "polyglot.diff"), "--no-llm", "--format", "json"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["by_rule"]["loose-equality"] >= 1 and out["by_file"]["ui/Profile.tsx"] >= 5
+    assert out["total"] == sum(out["by_rule"].values()) == sum(out["by_severity"].values())
+    main(["stats", "--file", str(FIX / "polyglot.diff"), "--no-llm"])
+    text = capsys.readouterr().out
+    assert text.startswith("rule") and "top files:" in text and "file(s) reviewed;" in text

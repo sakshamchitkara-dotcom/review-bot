@@ -149,6 +149,42 @@ def cmd_baseline(args, cfg: Config) -> list[Finding]:
     return []
 
 
+def cmd_stats(args, cfg: Config) -> list[Finding]:
+    """Counts by rule and by file for the whole tree (or a ref / --staged / --file diff)."""
+    from collections import Counter
+
+    if not (args.file or args.base or args.staged):
+        args.base = EMPTY_TREE
+    if not args.threshold:
+        cfg.set_threshold("info")
+    files, get_source = local_diff(args)
+    findings, _ = review(files, cfg, get_source, use_llm=not args.no_llm, verify=not args.no_verify,
+                         min_conf=args.min_confidence, cache_dir=_cache_dir(args))
+    by_rule = Counter(f.rule or f.category for f in findings)
+    by_file = Counter(f.file for f in findings)
+    worst = {}
+    for f in findings:
+        r = f.rule or f.category
+        if severity_rank(f.severity) >= severity_rank(worst.get(r, "info")):
+            worst[r] = f.severity
+    if args.format == "json":
+        text = json.dumps({"total": len(findings), "files_reviewed": len(files),
+                           "by_severity": dict(Counter(f.severity for f in findings)),
+                           "by_rule": dict(by_rule.most_common()), "by_file": dict(by_file.most_common())}, indent=2)
+    else:
+        w = max(map(len, by_rule), default=4)
+        rows = [f"{'rule':<{w}}  {'count':>5}  {'files':>5}  worst"]
+        rows += [f"{r:<{w}}  {n:>5}  {len({f.file for f in findings if (f.rule or f.category) == r}):>5}  {worst[r]}"
+                 for r, n in by_rule.most_common()]
+        rows += ["", "top files:"] + [f"{n:>5}  {p}" for p, n in by_file.most_common(10)]
+        text = "\n".join(rows + ["", f"{len(files)} file(s) reviewed; " + summary(findings)])
+    if args.output:
+        Path(args.output).write_text(text + "\n")
+    else:
+        print(text)
+    return []
+
+
 def cmd_pr(args, cfg: Config) -> list[Finding]:
     from . import github
 
@@ -268,6 +304,11 @@ def build_parser() -> argparse.ArgumentParser:
     b.add_argument("base", nargs="?", help="record findings in the diff against this ref (default: whole tree)")
     b.add_argument("--staged", action="store_true", help="record findings in staged changes only")
     b.add_argument("--file", help="record findings from a unified diff FILE ('-' for stdin)")
+    s = sub.add_parser("stats", parents=[common],
+                       help="count findings by rule and file (default: whole tree), e.g. to pick rules to tune")
+    s.add_argument("base", nargs="?", help="count findings in the diff against this ref (default: whole tree)")
+    s.add_argument("--staged", action="store_true", help="count findings in staged changes only")
+    s.add_argument("--file", help="count findings in a unified diff FILE ('-' for stdin)")
     e = sub.add_parser("explain", help="describe a rule (no argument: list all rules)")
     e.add_argument("rule", nargs="?", help="rule id, as shown in [category/rule] in the report")
     r = sub.add_parser("pr", parents=[common], help="review a GitHub pull request")
@@ -285,7 +326,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.threshold:
         cfg.set_threshold(args.threshold)
     try:
-        findings = {"diff": cmd_diff, "pr": cmd_pr, "baseline": cmd_baseline}[args.cmd](args, cfg)
+        findings = {"diff": cmd_diff, "pr": cmd_pr, "baseline": cmd_baseline,
+                    "stats": cmd_stats}[args.cmd](args, cfg)
     except Exception as e:  # noqa: BLE001 - top-level: report cleanly, non-zero exit
         from .github import GitHubError
 
