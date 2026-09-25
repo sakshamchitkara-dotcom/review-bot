@@ -10,6 +10,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from .diff import file_patch
+
 API = os.environ.get("GITHUB_API_URL", "https://api.github.com")
 
 
@@ -85,15 +87,8 @@ def diff_from_files(entries: list[dict]) -> str:
         if "patch" not in f:
             skipped.append(f["filename"])
             continue
-        new, old = f["filename"], f.get("previous_filename", f["filename"])
-        out.append(f"diff --git a/{old} b/{new}")
-        if f["status"] == "added":
-            out += ["new file mode 100644", "--- /dev/null", f"+++ b/{new}"]
-        elif f["status"] == "removed":
-            out += ["deleted file mode 100644", f"--- a/{old}", "+++ /dev/null"]
-        else:
-            out += [f"--- a/{old}", f"+++ b/{new}"]
-        out.append(f["patch"])
+        out.append(file_patch(f.get("previous_filename", f["filename"]), f["filename"], f["patch"],
+                              added=f["status"] == "added", deleted=f["status"] == "removed"))
     print(f"review-bot: PR diff too large for the diff endpoint; rebuilt it from {len(entries) - len(skipped)} "
           f"per-file patch(es)" + (f", skipped {len(skipped)} with no patch (binary or too large)" if skipped else "")
           + ("; GitHub lists at most 3000 files, so later files are missing" if len(entries) >= 3000 else ""),

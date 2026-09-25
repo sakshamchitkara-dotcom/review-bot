@@ -56,6 +56,18 @@ class FileDiff:
         return "\n".join(out)
 
 
+def file_patch(old: str, new: str, patch: str, *, added: bool = False, deleted: bool = False) -> str:
+    """A git-style diff for one file from its hunks, as the GitHub files and GitLab diffs APIs return them."""
+    head = [f"diff --git a/{old} b/{new}"]
+    if added:
+        head += ["new file mode 100644", "--- /dev/null", f"+++ b/{new}"]
+    elif deleted:
+        head += ["deleted file mode 100644", f"--- a/{old}", "+++ /dev/null"]
+    else:
+        head += [f"--- a/{old}", f"+++ b/{new}"]
+    return "\n".join(head + [patch.rstrip("\n")])
+
+
 def _strip_prefix(p: str) -> str | None:
     p = p.strip().split("\t")[0]
     if p == "/dev/null":
