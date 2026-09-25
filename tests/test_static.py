@@ -123,3 +123,11 @@ def test_loose_equality_with_fix():
     (f,) = _js(['if (a == b && c != "x == y") {  // a == b'])
     assert f.rule == "loose-equality" and f.fix == 'if (a === b && c !== "x == y") {  // a == b'
     assert _js(["if (x == null || y != undefined) {}", "a === b; c !== d; e <= f;", "const s = 'a == b';"]) == []
+
+
+def test_ts_any_exports():
+    got = _js(["export function load(x: any): string {", "export const cfg = {} as any;",
+               "export type M = Map<any, string>;", "function inner(y: any) {}",
+               'export const note = "any: thing";', "export const company = 1;"])
+    assert [f.line for f in got if f.rule == "ts-any-export"] == [1, 2, 3]
+    assert not [f for f in _js(["export function f(x: any) {}"], path="web/x.js") if f.rule == "ts-any-export"]
