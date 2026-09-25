@@ -97,10 +97,18 @@ def _paged(path: str, token: str | None) -> list[dict]:
         page += 1
 
 
+def headline(body: str) -> str:
+    return body.split("\n", 1)[0]
+
+
 def existing_feedback(owner: str, repo: str, number: int, token: str | None) -> tuple[set, set]:
-    """(path, line, body) of inline comments and bodies of reviews already on the PR."""
+    """(path, line, headline) of inline comments and bodies of reviews already on the PR.
+
+    The headline is the first line of the comment (severity, category, message), so a later
+    review-bot version with reworded advice or a different fix doesn't repost the same finding.
+    """
     base = f"/repos/{owner}/{repo}/pulls/{number}"
-    comments = {(c["path"], c.get("line"), c["body"]) for c in _paged(f"{base}/comments", token)}
+    comments = {(c["path"], c.get("line"), headline(c["body"])) for c in _paged(f"{base}/comments", token)}
     bodies = {r.get("body") or "" for r in _paged(f"{base}/reviews", token)}
     return comments, bodies
 
