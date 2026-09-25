@@ -216,7 +216,11 @@ jobs:
 The report is added to the job summary and `review-bot.sarif` is written. With
 `upload-sarif: "true"` (and `security-events: write`) the Action uploads it to code scanning
 itself, even when `fail-on` fails the step; code scanning is free on public repos and needs
-GitHub Advanced Security on private ones. See [`examples/review-bot.yml`](examples/review-bot.yml).
+GitHub Advanced Security on private ones. Pick one of `post` and `upload-sarif` for PR feedback:
+code scanning comments on the PR too, so with both on most findings show up twice (on
+[sandbox PR #2](https://github.com/sakshamchitkara-dotcom/review-bot-sandbox/pull/2) review-bot
+posted 17 inline comments and `github-advanced-security[bot]` 13 more for the same lines); the
+Action prints a notice when both are set. See [`examples/review-bot.yml`](examples/review-bot.yml).
 Fork PRs don't receive secrets, so they get the static pass only, and their `GITHUB_TOKEN` is
 read-only: with `post: "true"` the review can't be posted, so review-bot warns and keeps the
 job summary and SARIF instead of failing the job (`fail-on` still applies).
