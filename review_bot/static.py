@@ -72,6 +72,28 @@ EVAL = {
 }
 SHELL_TRUE = re.compile(r",\s*shell\s*=\s*True\b")  # kwarg in a call, not prose
 
+# --- JS/TS -----------------------------------------------------------------
+_JS_STR = re.compile(r"""(["'`])(?:\\.|(?!\1).)*\1""")
+LOOSE_EQ = re.compile(r"(?<![=!<>])(==|!=)(?!=)")
+
+
+def js_code_mask(text: str) -> str:
+    """Blank out string contents and // comments, keeping column positions (so fixes map back)."""
+    masked = _JS_STR.sub(lambda m: m.group(1) + " " * (len(m.group(0)) - 2) + m.group(1), text)
+    i = masked.find("//")
+    return masked if i < 0 else masked[:i] + " " * (len(masked) - i)
+
+
+def _loose_eq(text: str) -> tuple[list[re.Match], str]:
+    """Loose (in)equality operators outside strings/comments, ignoring the `== null` idiom."""
+    code = js_code_mask(text)
+    hits = [m for m in LOOSE_EQ.finditer(code) if not re.match(r"\s*(?:null|undefined)\b", code[m.end():])
+            and not re.search(r"\b(?:null|undefined)\s*$", code[:m.start()])]
+    fixed = text
+    for m in reversed(hits):
+        fixed = fixed[:m.start()] + m.group(1) + "=" + fixed[m.end():]
+    return hits, fixed
+
 
 def _mask(s: str) -> str:
     return s[:4] + "…" if len(s) > 4 else "…"
@@ -113,6 +135,13 @@ def scan_line(path: str, lang: str | None, ln: int, text: str, cfg: Config) -> I
         elif lang in ("js", "java", "csharp", "php") and EMPTY_CATCH.search(text):
             yield Finding(path, ln, "medium", "error-handling", "Empty catch block silently swallows errors.",
                           "Handle, log, or rethrow the error.", rule="bare-except")
+    if on("loose-equality") and lang == "js":
+        hits, fixed = _loose_eq(text)
+        if hits:
+            yield Finding(path, ln, "medium", "correctness",
+                          "Loose equality (`==`/`!=`) coerces types, e.g. `0 == \"\"` is true.",
+                          "Use `===` / `!==` (`== null` is left alone as the null-or-undefined idiom).",
+                          rule="loose-equality", fix=fixed)
     if on("sql-concat") and SQL_KW.search(text) and SQL_DYNAMIC.search(text):
         yield Finding(path, ln, "high", "security", "SQL built by string concatenation/formatting (SQL injection risk).",
                       "Use parameterized queries / bound parameters.", rule="sql-concat")

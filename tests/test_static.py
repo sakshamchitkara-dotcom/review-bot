@@ -111,3 +111,15 @@ def test_python_fixes():
     files = parse_diff("--- /dev/null\n+++ b/m.py\n@@ -0,0 +1 @@\n+ok = (x is not 3) or y\n")
     (f,) = [f for f in run_static(files, Config(), lambda p: "ok = (x is not 3) or y\n") if f.rule == "is-literal"]
     assert f.fix == "ok = (x != 3) or y"
+
+
+def _js(lines, path="web/x.ts"):
+    body = "".join(f"+{ln}\n" for ln in lines)
+    diff = f"--- /dev/null\n+++ b/{path}\n@@ -0,0 +1,{len(lines)} @@\n{body}"
+    return run_static(parse_diff(diff), Config(rules={"missing-tests": False}))
+
+
+def test_loose_equality_with_fix():
+    (f,) = _js(['if (a == b && c != "x == y") {  // a == b'])
+    assert f.rule == "loose-equality" and f.fix == 'if (a === b && c !== "x == y") {  // a == b'
+    assert _js(["if (x == null || y != undefined) {}", "a === b; c !== d; e <= f;", "const s = 'a == b';"]) == []
