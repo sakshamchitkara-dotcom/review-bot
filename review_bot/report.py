@@ -39,6 +39,8 @@ def to_terminal(fs: list[Finding], color: bool = False) -> str:
         lines.append(f"{f.file}:{f.line}: {sev} [{f.category}/{f.rule or f.source}] {f.message}")
         if f.suggestion:
             lines.append(f"    -> {f.suggestion}")
+        if f.fix is not None:
+            lines.append(f"    fix: {f.fix.strip()}")
     lines.append(summary(fs))
     return "\n".join(lines)
 

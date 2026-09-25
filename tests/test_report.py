@@ -53,3 +53,9 @@ def test_sarif_rules_carry_registry_metadata_for_code_scanning():
     assert sec["properties"]["security-severity"] == "9.5" and sec["properties"]["tags"] == ["security"]
     assert "security-severity" not in rules["debug-print"]["properties"]
     assert rules["debug-print"]["defaultConfiguration"]["level"] == "note"
+
+
+def test_terminal_shows_one_line_fix():
+    out = to_terminal([Finding("a.sh", 2, "high", "correctness", "unquoted", "quote it", rule="unquoted-rm",
+                               fix='    rm -rf "${D:?}"/')])
+    assert out.splitlines()[1:3] == ["    -> quote it", '    fix: rm -rf "${D:?}"/']
