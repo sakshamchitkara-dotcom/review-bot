@@ -94,6 +94,17 @@ GO_IGNORED_ERR = re.compile(r",\s*_\s*:?=\s*[\w.]+\(|^\s*_\s*=\s*[\w.]+\(")
 GO_PANIC = re.compile(r"(?<![\w.])panic\(")
 RUST_UNWRAP = re.compile(r"\.unwrap\(\)")
 RUST_UNSAFE = re.compile(r"\bunsafe\s*(?:\{|fn\b|impl\b)")
+RUST_CFG_TEST = re.compile(r"^\s*#\[cfg\(test\)\]")
+
+
+def rust_test_start(fd: FileDiff, source: str | None) -> int | None:
+    """First line of a `#[cfg(test)]` item; everything from there on is treated as test code.
+
+    ponytail: assumes the Rust convention of the test module sitting at the end of the file;
+    code after a mid-file `#[cfg(test)] fn` is treated as test code too.
+    """
+    lines = enumerate(source.splitlines(), 1) if source is not None else fd.added.items()
+    return next((ln for ln, t in lines if RUST_CFG_TEST.match(t)), None)
 
 UNSAFE_HTML = re.compile(r"\bdangerouslySetInnerHTML\b|\.(?:inner|outer)HTML\s*\+?=(?!=)")
 SANITIZED = re.compile(r"(?i)sanitize|DOMPurify|escapeHtml")
@@ -115,7 +126,8 @@ def _mask(s: str) -> str:
     return s[:4] + "…" if len(s) > 4 else "…"
 
 
-def scan_line(path: str, lang: str | None, ln: int, text: str, cfg: Config) -> Iterable[Finding]:
+def scan_line(path: str, lang: str | None, ln: int, text: str, cfg: Config,
+              test: bool | None = None) -> Iterable[Finding]:
     on = cfg.rule_on
     if on("secret"):
         for name, rx, sev in SECRET_PATTERNS:
@@ -134,7 +146,7 @@ def scan_line(path: str, lang: str | None, ln: int, text: str, cfg: Config) -> I
             yield Finding(path, ln, "info", "maintainability", f"{TODO.search(text).group(1)} left in change.",
                           "Track it in an issue or resolve it before merging.", rule="todo")
         return
-    test = is_test_path(path)
+    test = is_test_path(path) if test is None else test
     if on("debug-print") and not test and lang in DEBUG and DEBUG[lang].search(text) \
             and "file=sys.stderr" not in text:
         yield Finding(path, ln, "low", "debug", "Debug output / breakpoint left in code.",
@@ -166,7 +178,6 @@ def scan_line(path: str, lang: str | None, ln: int, text: str, cfg: Config) -> I
             yield Finding(path, ln, "low", "error-handling", "`panic` in library/application code.",
                           "Return an error to the caller instead.", rule="panic")
     if lang == "rust" and not text.lstrip().startswith("//"):
-        # ponytail: per-line view can't see `#[cfg(test)] mod tests` inside src files; only tests/ paths are exempt.
         if on("unwrap") and not test and RUST_UNWRAP.search(text):
             yield Finding(path, ln, "low", "error-handling", "`.unwrap()` panics on None/Err.",
                           "Propagate with `?`, or use `.expect(\"why this cannot fail\")`.", rule="unwrap")
@@ -290,8 +301,10 @@ def run_static(files: list[FileDiff], cfg: Config, get_source: SourceGetter | No
         if fd.is_deleted or fd.is_binary or cfg.ignored(fd.path):
             continue
         lang = lang_of(fd.path)
+        test_from = rust_test_start(fd, get_source(fd.path) if get_source else None) if lang == "rust" else None
         for ln, text in fd.added.items():
-            findings.extend(scan_line(fd.path, lang, ln, text, cfg))
+            test = is_test_path(fd.path) or (test_from is not None and ln >= test_from)
+            findings.extend(scan_line(fd.path, lang, ln, text, cfg, test))
         if lang == "python" and get_source:
             src = get_source(fd.path)
             if src is not None:

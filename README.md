@@ -88,7 +88,7 @@ run on every push without piling up duplicates; if nothing is new, nothing is po
 | `ignored-error` – `v, _ := f()` / `_ = f()` | go | medium |
 | `panic` – `panic(` outside tests | go | low |
 | `unsafe-block` – new `unsafe { }` / `unsafe fn` / `unsafe impl` | rust | medium |
-| `unwrap` – `.unwrap()` outside tests (`.expect("…")` is allowed) | rust | low |
+| `unwrap` – `.unwrap()` outside tests and `#[cfg(test)]` modules (`.expect("…")` is allowed) | rust | low |
 | `debug-print` – `print`, `breakpoint`, `console.log`, `debugger`, `binding.pry`, `dbg!`, `println!`, … (non-test files) | many | low |
 | `todo` – TODO/FIXME/XXX/HACK | all | info |
 | `missing-tests` – source changed but no test file touched | code | low |
@@ -99,8 +99,8 @@ run on every push without piling up duplicates; if nothing is new, nothing is po
 | `llm` – anything Claude finds and the verify pass keeps (with a one-line `fix` when possible) | all | varies |
 
 The JS/TS, Go and Rust rules are line heuristics, not a type checker: `missing-await` only knows
-about async functions declared in the same file, and Rust `#[cfg(test)]` modules inside `src/`
-are not recognised as tests.
+about async functions declared in the same file. Rust code from a `#[cfg(test)]` line to the end
+of the file counts as test code (the usual trailing `mod tests`).
 
 ## Configuration: `.reviewbot.toml`
 
