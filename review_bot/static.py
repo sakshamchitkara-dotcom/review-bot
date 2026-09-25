@@ -14,7 +14,7 @@ SourceGetter = Callable[[str], "str | None"]
 
 LANG = {
     ".py": "python", ".js": "js", ".jsx": "js", ".ts": "js", ".tsx": "js", ".mjs": "js",
-    ".cjs": "js", ".go": "go", ".rb": "ruby", ".java": "java", ".kt": "java", ".php": "php",
+    ".cjs": "js", ".go": "go", ".rb": "ruby", ".java": "java", ".kt": "kotlin", ".kts": "kotlin", ".php": "php",
     ".rs": "rust", ".cs": "csharp", ".sh": "shell", ".bash": "shell", ".zsh": "shell", ".c": "c", ".cpp": "c", ".h": "c",
 }
 CODE_EXTS = set(LANG)
@@ -56,6 +56,7 @@ DEBUG = {
     "ruby": re.compile(r"\b(?:binding\.pry|byebug)\b|^\s*(?:puts|p) "),
     "go": re.compile(r"^\s*fmt\.Print(?:ln|f)?\("),
     "java": re.compile(r"System\.(?:out|err)\.print(?:ln)?\(|\.printStackTrace\(\)"),
+    "kotlin": re.compile(r"^\s*print(?:ln)?\(|System\.(?:out|err)\.print|\.printStackTrace\(\)"),
     "php": re.compile(r"\b(?:var_dump|print_r|dd)\("),
     "rust": re.compile(r"\bdbg!\(|^\s*e?println!\("),
     "shell": re.compile(r"^\s*set\s+-\w*x"),
@@ -129,6 +130,22 @@ def _unquoted_rm(text: str) -> str | None:
     return fixed
 
 
+# --- Java / Kotlin ---------------------------------------------------------
+JAVA_STR_EQ = re.compile(r'"(?:\\.|[^"\\])*"\s*[!=]=(?!=)|(?<![!=<>])[!=]=\s*"')
+JAVA_STR_EQ_SIMPLE = re.compile(r'([\w.]+)\s*([!=])=\s*("(?:\\.|[^"\\])*")')
+KOTLIN_BANG = re.compile(r"(?<=[\w)\]])!!")
+
+
+def _java_str_eq_fix(text: str) -> str | None:
+    """`name == "lit"` -> `"lit".equals(name)`; only for one such compare on the line."""
+    ms = list(JAVA_STR_EQ_SIMPLE.finditer(text))
+    if len(ms) != 1:
+        return None
+    m = ms[0]
+    rep = ("!" if m.group(2) == "!" else "") + f"{m.group(3)}.equals({m.group(1)})"
+    return text[:m.start()] + rep + text[m.end():]
+
+
 UNSAFE_HTML = re.compile(r"\bdangerouslySetInnerHTML\b|\.(?:inner|outer)HTML\s*\+?=(?!=)")
 SANITIZED = re.compile(r"(?i)sanitize|DOMPurify|escapeHtml")
 TS_ANY_EXPORT = re.compile(r"^\s*export\b.*(?:[:<|,]\s*|\bas\s+)any\b")
@@ -183,7 +200,7 @@ def scan_line(path: str, lang: str | None, ln: int, text: str, cfg: Config,
                           "Bare `except:` also swallows KeyboardInterrupt/SystemExit and hides bugs.",
                           "Catch specific exceptions, e.g. `except ValueError:`.", rule="bare-except",
                           fix=BARE_EXCEPT_SUB.sub(r"\1except Exception:", text, count=1))
-        elif lang in ("js", "java", "csharp", "php") and EMPTY_CATCH.search(text):
+        elif lang in ("js", "java", "kotlin", "csharp", "php") and EMPTY_CATCH.search(text):
             yield Finding(path, ln, "medium", "error-handling", "Empty catch block silently swallows errors.",
                           "Handle, log, or rethrow the error.", rule="bare-except")
     if on("loose-equality") and lang == "js":
@@ -208,6 +225,17 @@ def scan_line(path: str, lang: str | None, ln: int, text: str, cfg: Config,
             yield Finding(path, ln, "medium", "security", "New `unsafe` code bypasses the borrow checker.",
                           "Add a `// SAFETY:` comment stating the invariant, or avoid unsafe.",
                           rule="unsafe-block")
+    if on("string-equality") and lang == "java" and not text.lstrip().startswith("//") \
+            and JAVA_STR_EQ.search(text.split("//", 1)[0]):
+        yield Finding(path, ln, "medium", "correctness",
+                      "String compared with `==`/`!=` checks reference identity, not content.",
+                      'Use `"literal".equals(value)` (null-safe) or `Objects.equals(a, b)`.',
+                      rule="string-equality", fix=_java_str_eq_fix(text))
+    if on("not-null-assertion") and lang == "kotlin" and not test and KOTLIN_BANG.search(js_code_mask(text)):
+        yield Finding(path, ln, "low", "error-handling",
+                      "`!!` throws NullPointerException when the value is null.",
+                      "Use `?.`, `?:` with a fallback or error, or `requireNotNull(x) { \"why\" }`.",
+                      rule="not-null-assertion")
     if lang == "shell" and not text.lstrip().startswith("#"):
         if on("curl-pipe-shell") and CURL_PIPE_SH.search(text):
             yield Finding(path, ln, "high", "security", "Remote script piped straight into a shell.",

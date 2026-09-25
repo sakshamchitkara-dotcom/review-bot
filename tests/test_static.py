@@ -219,3 +219,18 @@ def test_shell_rules():
         '--- /dev/null\n+++ b/a.bash\n@@ -0,0 +1,2 @@\n+rm -rf $BUILD/\n+sudo rm -r ${OUT}/cache  # clean\n'),
         Config(rules={"missing-tests": False})) if f.rule == "unquoted-rm"}
     assert fixes == {1: 'rm -rf "${BUILD:?}"/', 2: 'sudo rm -r "${OUT:?}"/cache  # clean'}
+
+
+def test_java_and_kotlin_rules():
+    got = _src("src/main/java/App.java", ['if (role == "admin") {', 'if (!"x".equals(y) && a != "b") {',
+                                          'String s = "a==b";', "if (n == 0) {", 'System.out.println("hi");',
+                                          "try { run(); } catch (Exception e) {}", '// if (a == "b")'])
+    assert got == {(1, "string-equality"), (2, "string-equality"), (5, "debug-print"), (6, "bare-except")}
+    fs = run_static(parse_diff('--- /dev/null\n+++ b/A.java\n@@ -0,0 +1,2 @@\n+  if (user.role == "admin") {\n'
+                               '+  if (a != "x") {\n'), Config(rules={"missing-tests": False}))
+    assert [f.fix for f in fs] == ['  if ("admin".equals(user.role)) {', '  if (!"x".equals(a)) {']
+
+    got = _src("app/src/main/kotlin/Main.kt", ["val n = user!!.name", 'val s = "wow!!"', 'println("debug")',
+                                               "val m = map[k]!!", "if (a != b) return"])
+    assert got == {(1, "not-null-assertion"), (3, "debug-print"), (4, "not-null-assertion")}
+    assert _src("app/src/test/kotlin/MainTest.kt", ["val n = user!!.name"]) == set()
