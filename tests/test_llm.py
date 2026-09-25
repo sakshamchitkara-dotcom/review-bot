@@ -1,6 +1,8 @@
 import json
 from types import SimpleNamespace as NS
 
+import pytest
+
 from review_bot.diff import parse_diff
 from review_bot.llm import numbered_chunks, run_llm
 
@@ -76,3 +78,31 @@ def test_static_findings_are_passed_as_context():
     client = FakeClient(review={"findings": []})
     run_llm(client, "m", parse_diff(DIFF), known=[Finding("a.py", 2, "low", "debug", "static saw this")])
     assert "static saw this" in client.calls[0]["messages"][0]["content"]
+
+
+def test_real_sdk_request_shape_via_mock_transport():
+    """Drive the real anthropic SDK against a mock HTTP transport (no network, no key)."""
+    import anthropic
+    httpx = pytest.importorskip("httpx2")
+
+    sent = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        sent.append(body)
+        is_verify = "Candidate findings" in body["messages"][0]["content"]
+        payload = ({"verdicts": [{"id": 0, "keep": True, "confidence": 0.95, "reason": "IndexError"}]}
+                   if is_verify else {"findings": [finding(2)]})
+        return httpx.Response(200, json={
+            "id": "msg_1", "type": "message", "role": "assistant", "model": body["model"],
+            "content": [{"type": "text", "text": json.dumps(payload)}],
+            "stop_reason": "end_turn", "stop_sequence": None,
+            "usage": {"input_tokens": 1, "output_tokens": 1},
+        })
+
+    client = anthropic.Anthropic(api_key="test", http_client=httpx.Client(transport=httpx.MockTransport(handler)))
+    got = run_llm(client, "claude-opus-5-5", parse_diff(DIFF))
+    assert [(f.file, f.line) for f in got] == [("a.py", 2)]
+    assert sent[0]["model"] == "claude-opus-5-5"
+    assert sent[0]["output_config"]["format"]["schema"]["required"] == ["findings"]
+    assert sent[0]["output_config"]["effort"] == "high" and sent[1]["output_config"]["effort"] == "medium"
