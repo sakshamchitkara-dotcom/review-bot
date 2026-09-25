@@ -13,6 +13,24 @@ def test_parse_pr_ref():
         parse_pr_ref("octo/cat")
 
 
+@pytest.mark.parametrize("url", [
+    "https://github.com/octo/cat/pull/7/files",
+    "https://github.com/octo/cat/pull/7/files/",
+    "https://github.com/octo/cat/pull/7/files?w=1",
+    "https://github.com/octo/cat/pull/7/files#diff-abc123",
+    "https://github.com/octo/cat/pull/7/commits/0a1b2c3",
+    "https://github.com/octo/cat/pull/7/checks",
+    "https://github.com/octo/cat/pull/7#issuecomment-99",
+])
+def test_parse_pr_ref_accepts_tab_urls(url):
+    assert parse_pr_ref(url) == ("octo", "cat", 7)
+
+
+def test_parse_pr_ref_rejects_other_pages():
+    with pytest.raises(ValueError):
+        parse_pr_ref("https://github.com/octo/cat/pull/7/blame")
+
+
 def _fake_api(owner, admin, viewer):
     def api(path, token, **kw):
         if path == "/user":

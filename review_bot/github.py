@@ -30,7 +30,12 @@ def get_token() -> str | None:
 
 
 def parse_pr_ref(ref: str) -> tuple[str, str, int]:
-    m = re.fullmatch(r"(?:https://github\.com/)?([\w.-]+)/([\w.-]+)(?:#|/pull/)(\d+)/?", ref.strip())
+    """owner/repo#N or a PR URL, including tab URLs (/files, /commits, /checks) and ?query/#anchor."""
+    ref = ref.strip()
+    if ref.startswith("https://"):
+        ref = re.split(r"[?#]", ref, maxsplit=1)[0]
+    m = re.fullmatch(r"(?:https://github\.com/)?([\w.-]+)/([\w.-]+)(?:#|/pull/)(\d+)"
+                     r"(?:/(?:files|commits|checks|changes)(?:/[^\s]*)?)?/?", ref)
     if not m:
         raise ValueError(f"expected owner/repo#N or a PR URL, got {ref!r}")
     return m.group(1), m.group(2), int(m.group(3))
