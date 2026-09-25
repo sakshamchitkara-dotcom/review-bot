@@ -50,6 +50,8 @@ def test_detects_js_issues_and_missing_tests():
     assert ("web/app.js", 2, "debug-print") in got
     assert ("web/app.js", 3, "bare-except") in got
     assert ("src/service.py", 1, "missing-tests") in got
+    (mt,) = [f for f in _run() if f.rule == "missing-tests"]  # one per diff, not one per file
+    assert "2 source file(s): `src/service.py`, `web/app.js`" in mt.suggestion
 
 
 def test_secret_value_is_masked():
