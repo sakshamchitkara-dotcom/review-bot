@@ -1,0 +1,36 @@
+diff --git a/app/db.py b/app/db.py
+index 1111111..2222222 100644
+--- a/app/db.py
++++ b/app/db.py
+@@ -1,4 +1,6 @@
+ import sqlite3
++import os
+ 
+ def get_user(conn, name):
+-    return conn.execute("SELECT * FROM users WHERE name = ?", (name,))
++    q = "SELECT * FROM users WHERE name = '" + name + "'"
++    return conn.execute(q)
+@@ -20,3 +22,4 @@ def close(conn):
+     conn.close()
+ 
+ # end
++# TODO: add pooling
+diff --git a/README.md b/README.md
+new file mode 100644
+index 0000000..3333333
+--- /dev/null
++++ b/README.md
+@@ -0,0 +1,2 @@
++# Title
++-- not a header, a markdown line starting with two dashes
+diff --git a/old.txt b/old.txt
+deleted file mode 100644
+index 4444444..0000000
+--- a/old.txt
++++ /dev/null
+@@ -1 +0,0 @@
+-bye
+diff --git a/img.png b/img.png
+new file mode 100644
+index 0000000..5555555
+Binary files /dev/null and b/img.png differ
