@@ -131,3 +131,10 @@ def test_ts_any_exports():
                'export const note = "any: thing";', "export const company = 1;"])
     assert [f.line for f in got if f.rule == "ts-any-export"] == [1, 2, 3]
     assert not [f for f in _js(["export function f(x: any) {}"], path="web/x.js") if f.rule == "ts-any-export"]
+
+
+def test_unsafe_html():
+    got = _js(["<div dangerouslySetInnerHTML={{ __html: bio }} />", "el.innerHTML = msg;",
+               "<p dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(bio) }} />",
+               "if (el.innerHTML === '') {}", "// dangerouslySetInnerHTML is banned"], path="ui/Bio.tsx")
+    assert [f.line for f in got if f.rule == "unsafe-html"] == [1, 2]
