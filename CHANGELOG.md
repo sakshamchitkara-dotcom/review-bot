@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.5.0 - 2026-09-25
+
+### Added
+- `review-bot mr` reviews GitLab merge requests over the REST API (read-only; `GITLAB_TOKEN`,
+  `$GITLAB_URL` for self-hosted hosts in the short `group/project!N` form).
+- `review-bot stats`: findings by rule (count, files, worst severity) and top files; `--format json`.
+- `--format github` prints GitHub Actions annotations; the Action's `annotations` input turns it on.
+- `.pre-commit-hooks.yaml`: a `review-bot` hook over staged changes (`--no-llm --fail-on high`).
+
+### Fixed
+- PRs too large for GitHub's diff endpoint (HTTP 406, over 300 files) are rebuilt from per-file patches.
+- PR URLs from the Files/Commits/Checks tabs, with `?query` or `#anchor`, are accepted.
+- `diff` without a base works before a repository's first commit.
+
 ## 0.4.0 - 2026-09-25
 
 ### Added
